@@ -1,8 +1,8 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 
 export const metadata = {
-  title: "Staff Portal HQ",
-  description: "Task management and team communication",
+  title: "Zen-Tech Intelligence Wing",
+  description: "AI DIvision of Zen-Tech ",
 };
 
 export default function RootLayout({ children }) {
