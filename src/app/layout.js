@@ -1,7 +1,7 @@
 import "bootstrap/dist/css/bootstrap.min.css";
 
 export const metadata = {
-  title: "ZTIW",
+  title: "Zen-Tech Intelligence Wing",
   description: "ZTIW AI DIVISION OF Zen-Tech ",
 };
 
