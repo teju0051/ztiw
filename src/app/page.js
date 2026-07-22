@@ -240,51 +240,58 @@ export default function ZTIWAILanding() {
     {
       name: "Vaibhav Mahadik",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/vaibhav-mandlik-8098b0249/",
       image:
         "https://www.image2url.com/r2/default/images/1784616944660-d391f225-ece9-4366-9e93-38573bf282af.png",
     },
     {
       name: "Rutuja Patil",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/rutuja-patil-4a5b10414/",
       image:
         "https://www.image2url.com/r2/default/images/1784616708835-95b77477-96c9-4b9a-941a-260de2b1f1e2.png",
     },
     {
       name: "Tanuja Garje",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/tanuja-garje-39bb78410/",
       image:
         "https://www.image2url.com/r2/default/images/1784616159281-c3469376-b203-45c6-8779-bf64575d98ab.png",
     },
     {
       name: "Aditi Jagtap",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/aditi-jagtap-7a5788383/",
       image:
         "https://www.image2url.com/r2/default/images/1784616643048-fabcf2f2-27fb-4e03-91d4-720b99fdee9c.png",
     },
     {
       name: "Nutan Dhepe",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/nutan14/",
       image:
         "https://www.image2url.com/r2/default/images/1784616277714-fe2db4a7-0f24-4127-8b63-33a2f96a55e0.png",
     },
     {
       name: "Janvi Kare",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/janvi-kare-a930a0415/",
       image:
         "https://www.image2url.com/r2/default/images/1784616428678-d4f5d3f5-057f-4aac-83dd-dc4654835b09.png",
     },
     {
       name: "Raviraj Gade",
       role: "AI Engineer",
-      linkedIn: "#",
+      linkedIn: "https://www.linkedin.com/in/raviraj-gade-492a47353/",
       image:
         "https://www.image2url.com/r2/default/images/1784616819184-1a1981cb-28ae-401a-9f3c-0692b410a015.png",
+    },
+    {
+      name: "Sanskruti Jadhav",
+      role: "AI Engineer",
+      linkedIn: "https://www.linkedin.com/in/sanskruti-jadhav9/",
+      image:
+        "https://www.image2url.com/r2/default/images/1784732711204-aca6eedb-fa72-4c3b-a13c-2abeb03dbbab.png",
     },
   ];
 
@@ -1775,77 +1782,6 @@ export default function ZTIWAILanding() {
             </div>
           </section>
 
-          {/* SECTION 5: PRE-FOOTER CTA (ENTERPRISE REDESIGN) */}
-          <section
-            style={{
-              backgroundColor: isDark ? "#09090b" : "#ffffff",
-              padding: "100px 5vw",
-              position: "relative",
-              zIndex: 10,
-              borderTop: `1px solid ${borderSubtle}`,
-            }}
-          >
-            <div className="row align-items-center">
-              <div className="col-lg-8 mb-5 mb-lg-0">
-                <h2
-                  style={{
-                    fontSize: "clamp(3rem, 5vw, 5.5rem)",
-                    fontWeight: "300",
-                    letterSpacing: "-2px",
-                    lineHeight: "1.1",
-                    color: textDark,
-                    marginBottom: "24px",
-                  }}
-                >
-                  Ready to initialize your next <br />
-                  <span style={{ fontWeight: "700" }}>
-                    Enterprise Ecosystem?
-                  </span>
-                </h2>
-                <p
-                  style={{
-                    color: textMuted,
-                    fontSize: "18px",
-                    lineHeight: "1.6",
-                    maxWidth: "600px",
-                    margin: 0,
-                  }}
-                >
-                  Award-winning studio recognized by the world's leading design
-                  communities. Let's build systems that reason.
-                </p>
-              </div>
-              <div className="col-lg-4 d-flex justify-content-lg-end">
-                <button
-                  className="btn rounded-0 d-inline-flex align-items-center justify-content-center gap-3"
-                  style={{
-                    backgroundColor: textDark,
-                    color: bgLight,
-                    padding: "24px 48px",
-                    fontSize: "14px",
-                    fontWeight: "700",
-                    letterSpacing: "2px",
-                    border: "none",
-                    textTransform: "uppercase",
-                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                    boxShadow: isDark
-                      ? "0 10px 30px rgba(255,255,255,0.05)"
-                      : "0 10px 30px rgba(0,0,0,0.1)",
-                  }}
-                  onMouseOver={(e) =>
-                    (e.currentTarget.style.transform = "translateY(-5px)")
-                  }
-                  onMouseOut={(e) =>
-                    (e.currentTarget.style.transform = "translateY(0)")
-                  }
-                >
-                  Deploy Now{" "}
-                  <span style={{ color: "#fb923c", fontSize: "18px" }}>↗</span>
-                </button>
-              </div>
-            </div>
-          </section>
-
           {/* NEW MEGA FOOTER (FULL-PAGE ENTERPRISE LAYOUT) */}
           <footer
             ref={footerRef}
@@ -1872,7 +1808,7 @@ export default function ZTIWAILanding() {
                     color: "#ffffff",
                   }}
                 >
-                  ZEN-TECH
+                  Z T I W
                 </span>
                 <p
                   style={{
@@ -1887,7 +1823,7 @@ export default function ZTIWAILanding() {
                   precision, high-contrast clarity, and zero layout overflow.
                 </p>
                 <a
-                  href="mailto:hello@zentech.so"
+                  href="mailto:zentechindiaofficial@gmail.com"
                   style={{
                     color: "#ffffff",
                     textDecoration: "none",
@@ -1900,7 +1836,7 @@ export default function ZTIWAILanding() {
                     paddingBottom: "4px",
                   }}
                 >
-                  hello@zentech.so
+                  zentechindiaofficial@gmail.com
                 </a>
               </div>
 
@@ -1990,27 +1926,7 @@ export default function ZTIWAILanding() {
               {/* Social Icons (Left) */}
               <div className="col-md-4 d-flex justify-content-center justify-content-md-start mb-4 mb-md-0 gap-4">
                 <a
-                  href="#"
-                  style={{ color: "inherit", transition: "color 0.2s ease" }}
-                  onMouseOver={(e) => (e.currentTarget.style.color = "#ffffff")}
-                  onMouseOut={(e) => (e.currentTarget.style.color = "#a1a1aa")}
-                  aria-label="Twitter"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"></path>
-                  </svg>
-                </a>
-                <a
-                  href="#"
+                  href="https://www.linkedin.com/company/zen-tech-india"
                   style={{ color: "inherit", transition: "color 0.2s ease" }}
                   onMouseOver={(e) => (e.currentTarget.style.color = "#ffffff")}
                   onMouseOut={(e) => (e.currentTarget.style.color = "#a1a1aa")}
@@ -2032,7 +1948,7 @@ export default function ZTIWAILanding() {
                   </svg>
                 </a>
                 <a
-                  href="#"
+                  href="https://www.instagram.com/zen_tech_india_official/"
                   style={{ color: "inherit", transition: "color 0.2s ease" }}
                   onMouseOver={(e) => (e.currentTarget.style.color = "#ffffff")}
                   onMouseOut={(e) => (e.currentTarget.style.color = "#a1a1aa")}
