@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "../lib/supabaseClient";
 
-// Premium Color Palette
 const COLORS = {
   indigo: "#4338ca",
   indigoDark: "#312e81",
@@ -14,132 +15,100 @@ const COLORS = {
   border: "#cbd5e1",
 };
 
-export default function Home() {
+export default function Login() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [loginStatus, setLoginStatus] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setLoginStatus(null);
-    console.log("Logging in with:", email, password);
+    setErrorMsg(null);
 
-    // Simulate "Long Load" (5 seconds)
-    setTimeout(() => {
+    try {
+      // Supabase Authentication
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(), // Strips accidental spaces
+        password: password,
+      });
+
+      if (error) {
+        console.error("Supabase Auth Error:", error);
+        
+        // INTERCEPTOR: Fixes the Supabase "{}" empty error bug
+        let messageToShow = error.message;
+        if (messageToShow === "{}" || !messageToShow) {
+          messageToShow = "Invalid Staff ID or Password. Please try again.";
+        }
+        
+        setErrorMsg(messageToShow);
+        setIsLoading(false);
+        return;
+      }
+
+      // Successful login, redirect to dashboard
+      router.push("/dashboard");
+      
+    } catch (err) {
+      console.error("Unexpected System Error:", err);
+      setErrorMsg("A network error occurred connecting to the authentication server.");
       setIsLoading(false);
-      setLoginStatus("success");
-    }, 5000);
-  };
-
-  const getContainerStyle = () => {
-    let style = {
-      minHeight: "100vh",
-      transition: "opacity 1s ease",
-      backgroundColor: "#f8fafc",
-    };
-    if (loginStatus === "success") {
-      style.opacity = 0;
     }
-    return style;
   };
 
   return (
-    <div
-      className="container-fluid p-0 d-flex align-items-center"
-      style={getContainerStyle()}
-    >
+    <div className="container-fluid p-0 d-flex align-items-center" style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
       <div className="row g-0 w-100" style={{ height: "100vh" }}>
-        {/* --- LEFT PANEL: IMAGE --- */}
-        {/* Hidden on mobile (md-6 only). We removed the text and added a placeholder image. */}
+        
+        {/* LEFT PANEL: IMAGE */}
         <div className="col-md-6 d-none d-md-block p-0">
           <img
             src="https://img.freepik.com/premium-photo/modern-building-symbol-success-business-corporate-sector-commercial-urban_817921-727.jpg"
             alt="Corporate background"
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              borderRight: `2px solid ${COLORS.tealDark}`,
-            }}
+            style={{ width: "100%", height: "100%", objectFit: "cover", borderRight: `2px solid ${COLORS.tealDark}` }}
           />
         </div>
 
-        {/* --- RIGHT PANEL: LOGIN FORM --- */}
-        <div
-          className="col-md-6 col-12 d-flex flex-column"
-          style={{ backgroundColor: "#ffffff" }}
-        >
+        {/* RIGHT PANEL: LOGIN FORM */}
+        <div className="col-md-6 col-12 d-flex flex-column" style={{ backgroundColor: "#ffffff" }}>
           <div className="flex-grow-1 d-flex align-items-center justify-content-center px-4 px-lg-5 py-5">
             <div className="w-100" style={{ maxWidth: "480px" }}>
-              {/* User Avatar Placeholder */}
-              <div
-                className="text-center mb-5"
-                style={{
-                  transition: "transform 0.5s ease, opacity 0.5s ease",
-                  opacity: isLoading ? 0.4 : 1,
-                  transform: isLoading
-                    ? "translateY(-10px)"
-                    : "translateY(0px)",
-                }}
-              >
+              
+              <div className="text-center mb-5" style={{ transition: "transform 0.5s ease, opacity 0.5s ease", opacity: isLoading ? 0.4 : 1, transform: isLoading ? "translateY(-10px)" : "translateY(0px)" }}>
                 <img
                   src="https://i.ibb.co/v6WY6JcJ/Chat-GPT-Image-Jul-19-2026-04-02-21-PM.png"
                   alt="Portal Icon"
-                  style={{
-                    width: "auto",
-                    height: "110px",
-                    objectFit: "fill",
-                  }}
+                  style={{ width: "auto", height: "110px", objectFit: "fill" }}
                 />
               </div>
 
-              {/* Login Form */}
+              {/* Error Message Alert */}
+              {errorMsg && (
+                <div className="alert alert-danger text-sm font-semibold mb-4" role="alert">
+                  {errorMsg}
+                </div>
+              )}
+
               <form onSubmit={handleLogin}>
-                {/* Staff ID */}
                 <div className="mb-4">
-                  <label
-                    className="form-label"
-                    style={{
-                      fontWeight: "700",
-                      fontSize: "14px",
-                      color: COLORS.textDark,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                    }}
-                  >
+                  <label className="form-label" style={{ fontWeight: "700", fontSize: "14px", color: COLORS.textDark, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     Staff Email / ID
                   </label>
                   <input
                     type="email"
                     className="form-control form-control-lg"
-                    placeholder="name@t-service.global"
+                    placeholder="name@ztiw.in"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    style={{
-                      padding: "16px",
-                      borderRadius: "10px",
-                      fontSize: "16px",
-                      borderColor: COLORS.border,
-                      backgroundColor: "#fdfdfd",
-                    }}
+                    style={{ padding: "16px", borderRadius: "10px", fontSize: "16px", borderColor: COLORS.border, backgroundColor: "#fdfdfd" }}
                   />
                 </div>
 
-                {/* Password */}
                 <div className="mb-4">
-                  <label
-                    className="form-label"
-                    style={{
-                      fontWeight: "700",
-                      fontSize: "14px",
-                      color: COLORS.textDark,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                    }}
-                  >
+                  <label className="form-label" style={{ fontWeight: "700", fontSize: "14px", color: COLORS.textDark, textTransform: "uppercase", letterSpacing: "0.5px" }}>
                     Password
                   </label>
                   <input
@@ -149,68 +118,22 @@ export default function Home() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    style={{
-                      padding: "16px",
-                      borderRadius: "10px",
-                      fontSize: "16px",
-                      borderColor: COLORS.border,
-                      backgroundColor: "#fdfdfd",
-                    }}
+                    style={{ padding: "16px", borderRadius: "10px", fontSize: "16px", borderColor: COLORS.border, backgroundColor: "#fdfdfd" }}
                   />
                 </div>
 
-                {/* Remember Me + Forgot Password */}
-                <div className="d-flex justify-content-between align-items-center mb-5">
-                  <div className="form-check">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="rememberMe"
-                      style={{ borderColor: COLORS.border }}
-                    />
-                    <label
-                      className="form-check-label"
-                      htmlFor="rememberMe"
-                      style={{ color: COLORS.textMuted, fontSize: "14px" }}
-                    >
-                      Keep me logged in
-                    </label>
-                  </div>
-                </div>
-
-                {/* Submit Button with Spinner Animation */}
                 <button
                   type="submit"
                   className="btn btn-lg w-100 d-flex align-items-center justify-content-center"
                   disabled={isLoading}
                   style={{
-                    padding: "16px",
-                    fontWeight: "700",
-                    borderRadius: "10px",
-                    border: "none",
-                    color: COLORS.textLight,
-                    transition: "all 0.3s ease",
-                    background: isLoading
-                      ? `linear-gradient(135deg, ${COLORS.border} 0%, #a1a1a1 100%)`
-                      : `linear-gradient(135deg, ${COLORS.teal} 0%, ${COLORS.indigo} 100%)`,
-                    boxShadow: isLoading
-                      ? "none"
-                      : "0 5px 15px rgba(67, 56, 202, 0.4)",
+                    padding: "16px", fontWeight: "700", borderRadius: "10px", border: "none", color: COLORS.textLight, transition: "all 0.3s ease",
+                    background: isLoading ? `linear-gradient(135deg, ${COLORS.border} 0%, #a1a1a1 100%)` : `linear-gradient(135deg, ${COLORS.teal} 0%, ${COLORS.indigo} 100%)`,
+                    boxShadow: isLoading ? "none" : "0 5px 15px rgba(67, 56, 202, 0.4)",
                     cursor: isLoading ? "not-allowed" : "pointer",
                   }}
                 >
-                  {isLoading ? (
-                    <>
-                      <span
-                        className="spinner-border spinner-border-sm me-3"
-                        role="status"
-                        aria-hidden="true"
-                      ></span>
-                      Authenticating Server...
-                    </>
-                  ) : (
-                    "Secure Login"
-                  )}
+                  {isLoading ? "Authenticating Server..." : "Secure Login"}
                 </button>
               </form>
             </div>
