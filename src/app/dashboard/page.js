@@ -23,6 +23,10 @@ export default function ZenTechDashboard() {
   const [reports, setReports] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Avatar Upload State
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef(null);
+
   // Chat State
   const [availableChannels, setAvailableChannels] = useState([]);
   const [activeChatChannel, setActiveChatChannel] = useState(null);
@@ -101,6 +105,59 @@ export default function ZenTechDashboard() {
   };
 
   // ==========================================
+  // AVATAR UPLOAD LOGIC
+  // ==========================================
+  const handleAvatarUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      return Swal.fire(
+        "Error",
+        "Only images are allowed for avatars.",
+        "error",
+      );
+    }
+
+    setIsUploadingAvatar(true);
+
+    // We use the user's UUID as the filename to constantly overwrite the old image
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${userProfile.id}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(fileName, file, { upsert: true });
+
+    if (uploadError) {
+      setIsUploadingAvatar(false);
+      return Swal.fire("Upload Failed", uploadError.message, "error");
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(fileName);
+
+    // Add timestamp cache-buster so the browser reloads the new image immediately
+    const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ avatar_url: newAvatarUrl })
+      .eq("id", userProfile.id);
+
+    if (!updateError) {
+      setUserProfile({ ...userProfile, avatar_url: newAvatarUrl });
+      Swal.fire("Success", "Profile avatar updated!", "success");
+    } else {
+      Swal.fire("Error", "Failed to update profile record.", "error");
+    }
+
+    setIsUploadingAvatar(false);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
+
+  // ==========================================
   // COMMS NETWORK (CHAT) LOGIC
   // ==========================================
   const fetchUserChannels = async (profile) => {
@@ -145,7 +202,7 @@ export default function ZenTechDashboard() {
     const { data, error } = await supabase
       .from("chats")
       .select(
-        "id, message, media_url, media_type, created_at, profiles:sender_id(full_name, role)",
+        "id, message, media_url, media_type, created_at, profiles:sender_id(full_name, role, avatar_url)",
       )
       .eq("channel", activeChatChannel)
       .order("created_at", { ascending: true });
@@ -747,7 +804,10 @@ export default function ZenTechDashboard() {
     return (
       <li>
         <button
-          onClick={() => setActiveTab(id)}
+          onClick={() => {
+            setActiveTab(id);
+            if (isSidebarCollapsed) setIsSidebarCollapsed(false);
+          }}
           title={isSidebarCollapsed ? label : ""}
           className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive ? "bg-blue-50 text-blue-600" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}
         >
@@ -919,17 +979,53 @@ export default function ZenTechDashboard() {
 
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col h-screen overflow-hidden w-full">
-          {/* Main Header (Hamburger removed as it's now in Sidebar) */}
-          <header className="bg-white h-[4.5rem] border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 z-10 w-full">
-            <div className="flex items-center gap-4">
-              <span className="inline-block px-3 py-1 bg-slate-800 text-white rounded-md text-[0.65rem] font-bold uppercase tracking-widest">
-                Role: {userProfile.role.replace("_", " ")}
-              </span>
-            </div>
-            <div className="flex items-center gap-4 sm:gap-6">
-              <span className="hidden sm:inline-block text-xs font-bold text-slate-700">
-                {userProfile.full_name}
-              </span>
+          {/* Main Header (Role text removed from left, Avatar added to right) */}
+          <header className="bg-white h-[4.5rem] border-b border-slate-200 flex items-center justify-end px-4 sm:px-6 flex-shrink-0 z-10 w-full">
+            <div className="flex items-center gap-3">
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-slate-800 leading-tight">
+                  {userProfile.full_name}
+                </p>
+                <p className="text-[0.65rem] font-bold text-slate-500 uppercase tracking-widest">
+                  {userProfile.role.replace("_", " ")}
+                </p>
+              </div>
+
+              <div
+                className="relative group cursor-pointer"
+                onClick={() => avatarInputRef.current.click()}
+                title="Change Avatar"
+              >
+                {isUploadingAvatar ? (
+                  <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center animate-pulse border-2 border-slate-200">
+                    <i className="fa-solid fa-spinner fa-spin text-slate-500"></i>
+                  </div>
+                ) : userProfile.avatar_url ? (
+                  <img
+                    src={userProfile.avatar_url}
+                    alt="Avatar"
+                    className="w-10 h-10 rounded-full object-cover border-2 border-slate-200 group-hover:border-blue-500 transition-colors"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-slate-800 text-white font-bold flex items-center justify-center border-2 border-slate-200 group-hover:border-blue-500 transition-colors">
+                    {userProfile.full_name.charAt(0)}
+                  </div>
+                )}
+
+                {/* Upload Overlay */}
+                <div className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <i className="fa-solid fa-camera text-white text-xs"></i>
+                </div>
+              </div>
+
+              {/* Hidden File Input for Avatar */}
+              <input
+                type="file"
+                accept="image/*"
+                ref={avatarInputRef}
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
             </div>
           </header>
 
@@ -989,44 +1085,67 @@ export default function ZenTechDashboard() {
                           return (
                             <div
                               key={msg.id}
-                              className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                              className={`flex w-full ${isMe ? "justify-end" : "justify-start"} mb-4`}
                             >
-                              <span className="text-[0.65rem] font-bold text-slate-400 mb-1 px-1">
-                                {isMe ? "You" : msg.profiles?.full_name}
-                                <span className="font-normal opacity-75 ml-2">
-                                  {new Date(msg.created_at).toLocaleTimeString(
-                                    [],
-                                    { hour: "2-digit", minute: "2-digit" },
-                                  )}
-                                </span>
-                              </span>
-
                               <div
-                                className={`px-4 py-2.5 rounded-2xl max-w-[75%] shadow-sm text-sm ${isMe ? "bg-blue-600 text-white rounded-tr-sm" : "bg-white border border-slate-200 text-slate-800 rounded-tl-sm"}`}
+                                className={`flex gap-3 max-w-[80%] ${isMe ? "flex-row-reverse" : "flex-row"}`}
                               >
-                                {msg.media_url &&
-                                  msg.media_type === "image" && (
-                                    <img
-                                      src={msg.media_url}
-                                      alt="Chat Upload"
-                                      className="max-w-full h-auto rounded-lg mb-2 border border-black/10"
-                                      style={{ maxHeight: "300px" }}
-                                    />
-                                  )}
-                                {msg.media_url &&
-                                  msg.media_type === "video" && (
-                                    <video
-                                      src={msg.media_url}
-                                      controls
-                                      className="max-w-full h-auto rounded-lg mb-2 border border-black/10"
-                                      style={{ maxHeight: "300px" }}
-                                    />
-                                  )}
-                                {msg.message && (
-                                  <p className="whitespace-pre-wrap leading-relaxed">
-                                    {msg.message}
-                                  </p>
+                                {/* Chat Avatar Display */}
+                                {msg.profiles?.avatar_url ? (
+                                  <img
+                                    src={msg.profiles.avatar_url}
+                                    alt="Avatar"
+                                    className="w-8 h-8 rounded-full object-cover shadow-sm self-end"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shadow-sm self-end">
+                                    {msg.profiles?.full_name?.charAt(0)}
+                                  </div>
                                 )}
+
+                                <div
+                                  className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                                >
+                                  <span className="text-[0.65rem] font-bold text-slate-400 mb-1 px-1">
+                                    {isMe ? "You" : msg.profiles?.full_name}
+                                    <span className="font-normal opacity-75 ml-2">
+                                      {new Date(
+                                        msg.created_at,
+                                      ).toLocaleTimeString([], {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </span>
+                                  </span>
+
+                                  <div
+                                    className={`px-4 py-2.5 rounded-2xl shadow-sm text-sm ${isMe ? "bg-blue-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm"}`}
+                                  >
+                                    {msg.media_url &&
+                                      msg.media_type === "image" && (
+                                        <img
+                                          src={msg.media_url}
+                                          alt="Chat Upload"
+                                          className="max-w-full h-auto rounded-lg mb-2 border border-black/10"
+                                          style={{ maxHeight: "300px" }}
+                                        />
+                                      )}
+                                    {msg.media_url &&
+                                      msg.media_type === "video" && (
+                                        <video
+                                          src={msg.media_url}
+                                          controls
+                                          className="max-w-full h-auto rounded-lg mb-2 border border-black/10"
+                                          style={{ maxHeight: "300px" }}
+                                        />
+                                      )}
+                                    {msg.message && (
+                                      <p className="whitespace-pre-wrap leading-relaxed">
+                                        {msg.message}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           );
