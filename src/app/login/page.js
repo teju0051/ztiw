@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 
@@ -22,33 +22,68 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  useEffect(() => {
+    // Suppress Next.js smooth scrolling warning
+    document.documentElement.setAttribute("data-scroll-behavior", "smooth");
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMsg(null);
 
     try {
-      // Supabase Authentication
+      // 1. Supabase Authentication
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(), // Strips accidental spaces
+        email: email.trim(),
         password: password,
       });
 
       if (error) {
         console.error("Supabase Auth Error:", error);
-        
-        // INTERCEPTOR: Fixes the Supabase "{}" empty error bug
         let messageToShow = error.message;
         if (messageToShow === "{}" || !messageToShow) {
           messageToShow = "Invalid Staff ID or Password. Please try again.";
         }
-        
         setErrorMsg(messageToShow);
         setIsLoading(false);
         return;
       }
 
-      // Successful login, redirect to dashboard
+      // 2. Security Interceptor: Check Ban Status
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", data.session.user.id)
+        .single();
+
+      if (profileErr) console.error("Profile Fetch Error:", profileErr);
+
+      if (profile) {
+        if (profile.ban_status === "permanent") {
+          await supabase.auth.signOut();
+          setErrorMsg(`ACCESS DENIED: Account permanently banned. Reason: ${profile.ban_reason || 'Admin Decision'}`);
+          setIsLoading(false);
+          return;
+        }
+
+        if (profile.ban_status === "temporary") {
+          const now = new Date();
+          const banEnd = new Date(profile.ban_until);
+          
+          if (now < banEnd) {
+            await supabase.auth.signOut();
+            setErrorMsg(`ACCOUNT SUSPENDED (24H). Reason: ${profile.ban_reason || 'Admin Decision'}. Unlocks at: ${banEnd.toLocaleString()}`);
+            setIsLoading(false);
+            return;
+          } else {
+            // Ban expired, clear it
+            await supabase.from("profiles").update({ ban_status: "none", ban_until: null }).eq("id", data.session.user.id);
+          }
+        }
+      }
+
+      // 3. Successful login, redirect to dashboard
       router.push("/dashboard");
       
     } catch (err) {
@@ -86,8 +121,8 @@ export default function Login() {
 
               {/* Error Message Alert */}
               {errorMsg && (
-                <div className="alert alert-danger text-sm font-semibold mb-4" role="alert">
-                  {errorMsg}
+                <div className="alert alert-danger text-sm font-semibold mb-4 border-2 border-red-400 bg-red-50 text-red-800" role="alert">
+                  <i className="fa-solid fa-triangle-exclamation mr-2"></i> {errorMsg}
                 </div>
               )}
 
