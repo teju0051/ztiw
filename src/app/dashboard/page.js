@@ -23,8 +23,9 @@ export default function ZenTechDashboard() {
   const [reports, setReports] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Staff Directory State (Admin Only)
+  // Staff Directory State 
   const [allStaff, setAllStaff] = useState([]);
+  const [globalDirectory, setGlobalDirectory] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [teamFilter, setTeamFilter] = useState("All");
@@ -37,11 +38,15 @@ export default function ZenTechDashboard() {
   const [availableChannels, setAvailableChannels] = useState([]);
   const [activeChatChannel, setActiveChatChannel] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  const [channelPreviews, setChannelPreviews] = useState({});
   const [chatInput, setChatInput] = useState("");
   const [isSendingChat, setIsSendingChat] = useState(false);
+  const [isUploadingGroupAvatar, setIsUploadingGroupAvatar] = useState(false);
+  
   const chatEndRef = useRef(null);
   const chatMediaInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const groupAvatarInputRef = useRef(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -56,9 +61,7 @@ export default function ZenTechDashboard() {
     checkUserAndFetchProfile();
   }, []);
 
-  // ==========================================
   // ACTIVE SESSION TERMINATOR (Mid-Session Ban Check)
-  // ==========================================
   useEffect(() => {
     if (!userProfile) return;
     const checkBanInterval = setInterval(async () => {
@@ -69,7 +72,7 @@ export default function ZenTechDashboard() {
         } else {
           clearInterval(checkBanInterval);
           Swal.fire({
-            title: "TIPS",
+            title: "Access Revoked",
             text: "There is an error at our end please login again",
             icon: "error",
             allowOutsideClick: false,
@@ -78,7 +81,7 @@ export default function ZenTechDashboard() {
           }).then(() => handleLogout());
         }
       }
-    }, 10000); // Polling every 10 seconds to catch banned users instantly
+    }, 10000); 
     return () => clearInterval(checkBanInterval);
   }, [userProfile]);
 
@@ -89,19 +92,15 @@ export default function ZenTechDashboard() {
     const { data: profile, error: profileError } = await supabase.from("profiles").select("*").eq("id", session.user.id).single();
 
     if (profile && !profileError) {
-      // ==========================================
       // PAGE-LOAD SECURITY INTERCEPTOR
-      // ==========================================
       if (profile.ban_status && profile.ban_status !== "none") {
         if (profile.ban_status === "temporary" && new Date() >= new Date(profile.ban_until)) {
-          // Temp ban expired while they were offline. Clear it.
           await supabase.from("profiles").update({ ban_status: "none", ban_until: null }).eq("id", session.user.id);
           profile.ban_status = "none";
         } else {
-          // User is currently banned. Destroy session immediately.
           await supabase.auth.signOut();
           Swal.fire({
-            title: "TIPS",
+            title: "Access Revoked",
             text: "There is an error at our end please login again",
             icon: "error",
             allowOutsideClick: false,
@@ -109,10 +108,11 @@ export default function ZenTechDashboard() {
           return;
         }
       }
-      // ==========================================
 
       setUserProfile(profile);
-      await fetchUserChannels(profile);
+      
+      const dirMap = await fetchGlobalDirectory(); 
+      await fetchUserChannels(profile, dirMap);
 
       if (profile.role === "admin") {
         fetchAdminTeamsAndUnassigned();
@@ -172,25 +172,57 @@ export default function ZenTechDashboard() {
     if (!updateError) {
       setUserProfile({ ...userProfile, avatar_url: newAvatarUrl });
       Swal.fire("Success", "Profile avatar updated!", "success");
-    } else {
-      Swal.fire("Error", "Failed to update profile record.", "error");
-    }
+    } else Swal.fire("Error", "Failed to update profile record.", "error");
 
     setIsUploadingAvatar(false);
     if (avatarInputRef.current) avatarInputRef.current.value = "";
   };
 
-  // ==========================================
-  // STAFF DIRECTORY LOGIC (ADMIN ONLY)
-  // ==========================================
-  const fetchAllStaff = async () => {
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    const { data: teamMembers } = await supabase.from('team_members').select('user_id, teams(name)');
-    const { data: teams } = await supabase.from('teams').select('name, lead_id');
-    const { data: currentTasks } = await supabase.from('tasks').select('assigned_to, title').eq('status', 'in_progress');
+  const handleGroupAvatarUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file || !activeChatChannel) return;
+    if (!file.type.startsWith("image/")) return Swal.fire("Error", "Only images are allowed.", "error");
 
+    const activeChObj = availableChannels.find(c => c.id === activeChatChannel);
+    if (!activeChObj || !activeChObj.canEdit) return Swal.fire("Access Denied", "You do not have permission to change this group's avatar.", "error");
+
+    setIsUploadingGroupAvatar(true);
+    const safeChannelName = activeChatChannel.replace(/[^a-zA-Z0-9]/g, '_');
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${safeChannelName}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage.from("group_avatars").upload(fileName, file, { upsert: true });
+    if (uploadError) {
+      setIsUploadingGroupAvatar(false);
+      return Swal.fire("Upload Failed", uploadError.message, "error");
+    }
+
+    const { data: publicUrlData } = supabase.storage.from("group_avatars").getPublicUrl(fileName);
+    const newAvatarUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`;
+
+    await supabase.from("channel_metadata").upsert({ channel_name: activeChatChannel, avatar_url: newAvatarUrl });
+
+    Swal.fire("Success", "Group avatar updated!", "success");
+    setIsUploadingGroupAvatar(false);
+    if (groupAvatarInputRef.current) groupAvatarInputRef.current.value = "";
+    
+    // Refresh channels globally
+    const dirMap = await fetchGlobalDirectory();
+    fetchUserChannels(userProfile, dirMap);
+  };
+
+  // ==========================================
+  // STAFF DIRECTORY LOGIC 
+  // ==========================================
+  const fetchGlobalDirectory = async () => {
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    // FIX: Grab team_id explicitely to prevent faulty joins
+    const { data: teamMembers } = await supabase.from('team_members').select('user_id, team_id');
+    const { data: teams } = await supabase.from('teams').select('id, name, lead_id');
+
+    const dirMap = {};
     if (profiles) {
-      const staffList = profiles.map(p => {
+      profiles.forEach(p => {
         let division = "Unassigned";
         if (p.role === 'admin') division = "System Administration";
         else if (p.role === 'team_lead') {
@@ -198,18 +230,27 @@ export default function ZenTechDashboard() {
           if (team) division = team.name;
         } else if (p.role === 'ai_engineer') {
           const member = teamMembers?.find(tm => tm.user_id === p.id);
-          if (member && member.teams) division = Array.isArray(member.teams) ? member.teams[0]?.name : member.teams?.name;
+          if (member) {
+            const teamObj = teams?.find(t => t.id === member.team_id);
+            if (teamObj) division = teamObj.name;
+          }
         }
-        
+        dirMap[p.id] = { ...p, team_name: division };
+      });
+      setGlobalDirectory(dirMap);
+    }
+    return dirMap; 
+  };
+
+  const fetchAllStaff = async () => {
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    const { data: currentTasks } = await supabase.from('tasks').select('assigned_to, title').eq('status', 'in_progress');
+
+    if (profiles) {
+      const staffList = profiles.map(p => {
         const generatedId = p.email ? p.email.split('@')[0] : `ZT-${p.id.substring(0, 8).toUpperCase()}`;
         const activeTask = currentTasks?.find(t => t.assigned_to === p.id)?.title || "Idle / Monitored";
-
-        return {
-          ...p,
-          staff_id: generatedId,
-          division: division || "Unassigned",
-          current_task: activeTask
-        };
+        return { ...p, staff_id: generatedId, division: globalDirectory[p.id]?.team_name || "Unassigned", current_task: activeTask };
       });
       setAllStaff(staffList);
     }
@@ -230,169 +271,133 @@ export default function ZenTechDashboard() {
     return 'bg-slate-100 text-slate-500 border-slate-200';
   };
 
-  // BAN SYSTEM
-  const handleBanStaff = async (staff) => {
-    if (staff.ban_status !== 'none') {
-      if (staff.revoke_count >= 1) {
-        return Swal.fire("Revocation Blocked", "This staff member has exhausted their 1 revoke chance. The permanent ban cannot be lifted.", "error");
-      }
-      
-      Swal.fire({
-        title: `Revoke Ban for ${staff.full_name}?`,
-        text: "You have 1 chance to revoke a ban per staff member. After this, any future ban will be permanent and irreversible.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, Unban',
-        confirmButtonColor: '#10b981'
-      }).then(async (result) => {
-        if (result.isConfirmed) {
-          // Explicit .select() verifies the RLS policy allowed the change
-          const { data: updatedData, error } = await supabase.from('profiles').update({ ban_status: 'none', revoke_count: 1, ban_reason: null, ban_until: null }).eq('id', staff.id).select();
-          
-          if (error || !updatedData || updatedData.length === 0) {
-            Swal.fire('Database Action Blocked', `Supabase security (RLS) prevented this action. Did you run the SQL code?`, 'error');
-          } else {
-            await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Revoked ban for ${staff.full_name}` }]);
-            Swal.fire('Restored', 'Staff access has been reinstated.', 'success');
-            fetchAllStaff();
-          }
-        }
-      });
-      return;
-    }
-
-    const isTempDisabled = staff.revoke_count >= 1;
-
-    const { value: formValues } = await Swal.fire({
-      title: `Ban ${staff.full_name}`,
-      html: `
-        <div style="text-align: left; font-size: 14px;">
-          <p style="margin-bottom: 15px; color: #475569;"><strong>Role:</strong> ${staff.role.replace('_',' ')}</p>
-          
-          <label style="display: block; margin-bottom: 8px;">
-            <input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? 'disabled' : 'checked'}> 
-            <span style="${isTempDisabled ? 'text-decoration: line-through; color: #94a3b8;' : ''}">Temporary Ban (24 Hours)</span>
-          </label>
-          <label style="display: block; margin-bottom: 15px;">
-            <input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? 'checked' : ''}> 
-            <strong style="color: #b91c1c;">Permanent Ban</strong> 
-            ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ''}
-          </label>
-          
-          <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px;"></textarea>
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Enforce Ban',
-      confirmButtonColor: '#dc2626',
-      preConfirm: () => {
-        const type = document.getElementById('tempBan').checked ? 'temporary' : 'permanent';
-        const reason = document.getElementById('banReason').value;
-        if (!reason) Swal.showValidationMessage('A reason for the ban is required.');
-        return { type, reason };
-      }
-    });
-
-    if (formValues) {
-      const banEnd = formValues.type === 'temporary' ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
-      
-      // Explicit .select() to verify the row was physically modified
-      const { data: updatedData, error } = await supabase.from('profiles').update({
-        ban_status: formValues.type,
-        ban_reason: formValues.reason,
-        ban_until: banEnd
-      }).eq('id', staff.id).select();
-
-      if (error || !updatedData || updatedData.length === 0) {
-        Swal.fire('Database Action Blocked', `Supabase security (RLS) prevented the ban. Please run the SQL command in your database!`, 'error');
-      } else {
-        await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Issued a ${formValues.type} ban to ${staff.full_name}. Reason: ${formValues.reason}` }]);
-        Swal.fire('Banned', `The user has been successfully blocked from the portal.`, 'success');
-        fetchAllStaff();
-      }
-    }
-  };
-
-  const handleViewStaffTasks = async (staffId, staffName, ztId) => {
-    Swal.fire({ title: 'Retrieving Telemetry...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    const { data: staffTasks, error } = await supabase.from('tasks').select('title, status, created_at').eq('assigned_to', staffId).order('created_at', { ascending: false }).limit(10);
-      
-    if (!error) {
-      let taskHtml = `<div style="text-align: left; max-height: 350px; overflow-y: auto;" class="custom-scrollbar pr-2">`;
-      if (!staffTasks || staffTasks.length === 0) taskHtml += `<div style="text-align: center; padding: 20px; color: #94a3b8; font-style: italic;">No active or completed tasks assigned to this operative.</div>`;
-      else {
-        taskHtml += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
-        staffTasks.forEach(t => {
-          let bg = '#fef3c7', col = '#a16207';
-          if (t.status === 'completed' || t.status === 'approved') { bg = '#dcfce7'; col = '#15803d'; }
-          else if (t.status === 'rejected') { bg = '#fee2e2'; col = '#b91c1c'; }
-          else if (t.status === 'pending_completion_approval' || t.status === 'pending_approval') { bg = '#f3e8ff'; col = '#7e22ce'; }
-
-          taskHtml += `
-            <div style="padding: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <p style="font-weight: bold; font-size: 14px; color: #1e293b; margin: 0 0 6px 0;">${t.title}</p>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; background: ${bg}; color: ${col};">${t.status.replace(/_/g, ' ')}</span>
-                <span style="font-size: 12px; color: #94a3b8;">${new Date(t.created_at).toLocaleDateString()}</span>
-              </div>
-            </div>
-          `;
-        });
-        taskHtml += `</div>`;
-      }
-      taskHtml += `</div>`;
-
-      Swal.fire({
-        title: `<div style="font-size: 18px;">${staffName}</div><div style="font-size: 12px; color: #64748b; font-family: monospace;">ID: ${ztId}</div>`,
-        html: taskHtml,
-        confirmButtonText: 'Close Window',
-        confirmButtonColor: '#3b82f6',
-        width: '500px'
-      });
-    } else Swal.fire('Error', 'Could not retrieve task data.', 'error');
-  };
-
   // ==========================================
   // COMMS NETWORK (CHAT) LOGIC
   // ==========================================
-  const fetchUserChannels = async (profile) => {
-    let channels = [];
-    if (profile.role === "admin") {
-      channels = [
-        { id: "Admin", label: "Admin " },
-        { id: "Core AI & Backend", label: "Core AI & Backend" },
-        { id: "Tools & Integrations", label: "Tools & Integrations" },
-        { id: "QA & Operations", label: "QA & Operations" },
-      ];
-    } else if (profile.role === "team_lead") {
-      channels.push({ id: "Admin", label: "Admin " });
-      const { data } = await supabase.from("teams").select("name").eq("lead_id", profile.id).maybeSingle();
-      if (data && data.name) channels.push({ id: data.name, label: data.name });
-    } else if (profile.role === "ai_engineer") {
-      const { data: memberData } = await supabase.from("team_members").select("team_id").eq("user_id", profile.id).maybeSingle();
-      if (memberData && memberData.team_id) {
-        const { data: teamData } = await supabase.from("teams").select("name").eq("id", memberData.team_id).maybeSingle();
-        if (teamData && teamData.name) channels.push({ id: teamData.name, label: teamData.name });
-      }
+  const fetchUserChannels = async (profile, dirMap) => {
+    const { data: channelMeta } = await supabase.from('channel_metadata').select('*');
+
+    const getAvatar = (chName) => {
+      const meta = channelMeta?.find(m => m.channel_name === chName);
+      return meta?.avatar_url || "https://i.ibb.co/L5tKzDq/default-group.png"; 
+    };
+
+    let baseChannels = [];
+    let myTeamName = null;
+
+    if (profile.role === "team_lead" || profile.role === "ai_engineer") {
+       myTeamName = dirMap[profile.id]?.team_name;
     }
-    setAvailableChannels(channels);
-    if (channels.length > 0) setActiveChatChannel(channels[0].id);
+
+    const allUserIds = Object.keys(dirMap);
+
+    // 1. GLOBAL CHANNEL
+    baseChannels.push({
+      id: "All Teams",
+      label: "All Teams",
+      avatar_url: getAvatar("All Teams"),
+      memberIds: allUserIds,
+      lead: "System Administration",
+      canEdit: profile.role === 'admin'
+    });
+
+    // 2. ADMIN ONLY CHANNEL
+    if (profile.role === 'admin' || profile.role === 'team_lead') {
+      baseChannels.push({
+        id: "Admin",
+        label: profile.role === 'admin' ? "Admin Hub" : "Admin Network",
+        avatar_url: getAvatar("Admin"),
+        memberIds: allUserIds.filter(id => dirMap[id].role === 'admin' || dirMap[id].role === 'team_lead'),
+        lead: "System Administration",
+        canEdit: profile.role === 'admin'
+      });
+    }
+
+    // 3. TEAM CHANNELS
+    const buildTeamChannel = (teamName) => {
+      const memberIds = allUserIds.filter(id => dirMap[id].team_name === teamName);
+      const leadProfile = memberIds.map(id => dirMap[id]).find(p => p.role === 'team_lead');
+      
+      return {
+        id: teamName,
+        label: teamName,
+        avatar_url: getAvatar(teamName),
+        memberIds: memberIds,
+        lead: leadProfile ? leadProfile.full_name : "Unassigned",
+        canEdit: profile.role === 'admin' || (profile.role === 'team_lead' && myTeamName === teamName)
+      };
+    };
+
+    if (profile.role === 'admin') {
+       const t1 = buildTeamChannel("Core AI & Backend");
+       const t2 = buildTeamChannel("Tools & Integrations");
+       const t3 = buildTeamChannel("QA & Operations");
+       if (t1) baseChannels.push(t1);
+       if (t2) baseChannels.push(t2);
+       if (t3) baseChannels.push(t3);
+    } else if (myTeamName && myTeamName !== "Unassigned") {
+       // FIX: Only build team channel if successfully resolved
+       const t = buildTeamChannel(myTeamName);
+       if (t) baseChannels.push(t);
+    }
+
+    setAvailableChannels(baseChannels);
+    if (baseChannels.length > 0 && !activeChatChannel) setActiveChatChannel(baseChannels[0].id);
+  };
+
+  const fetchChatPreviews = async () => {
+    if (availableChannels.length === 0 || Object.keys(globalDirectory).length === 0) return;
+    let previews = {};
+    for (const ch of availableChannels) {
+      const { data: latest } = await supabase.from('chats').select('message, media_type, created_at, sender_id').eq('channel', ch.id).order('created_at', { ascending: false }).limit(1);
+      
+      const { data: unreadData } = await supabase.from('chats').select('id, read_by').eq('channel', ch.id).neq('sender_id', userProfile.id);
+      const unreadCount = (unreadData || []).filter(msg => !(msg.read_by || []).includes(userProfile.id)).length;
+
+      let senderName = 'Unknown';
+      let text = 'No messages yet';
+      let time = '';
+      if (latest && latest.length > 0) {
+         const msg = latest[0];
+         const senderProfile = globalDirectory[msg.sender_id];
+         senderName = senderProfile ? senderProfile.full_name.split(' ')[0] : 'Unknown';
+         text = msg.message || `[${msg.media_type.toUpperCase()}]`;
+         time = new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+      }
+      previews[ch.id] = { sender: senderName, text, count: unreadCount, time };
+    }
+    setChannelPreviews(previews);
   };
 
   const fetchChatMessages = async () => {
     if (!activeChatChannel) return;
-    const { data, error } = await supabase.from("chats").select("id, message, media_url, media_type, created_at, profiles:sender_id(full_name, role, avatar_url)").eq("channel", activeChatChannel).order("created_at", { ascending: true });
-    if (!error && data) setChatMessages(data);
+    const { data, error } = await supabase.from("chats").select("id, message, media_url, media_type, created_at, sender_id, read_by, profiles:sender_id(full_name, role, avatar_url)").eq("channel", activeChatChannel).order("created_at", { ascending: true });
+    
+    if (!error && data) {
+      setChatMessages(data);
+      
+      const unreadMessages = data.filter(m => m.sender_id !== userProfile.id && !(m.read_by || []).includes(userProfile.id));
+      if (unreadMessages.length > 0) {
+        for (let msg of unreadMessages) {
+          const newReadBy = [...(msg.read_by || []), userProfile.id];
+          await supabase.from('chats').update({ read_by: newReadBy }).eq('id', msg.id);
+        }
+      }
+    }
   };
 
   useEffect(() => {
-    if (activeTab === "chat" && activeChatChannel) {
-      fetchChatMessages();
-      const intervalId = setInterval(fetchChatMessages, 3000);
+    if (activeTab === "chat") {
+      fetchChatPreviews();
+      if (activeChatChannel) fetchChatMessages();
+      
+      const intervalId = setInterval(() => {
+        fetchChatPreviews();
+        if (activeChatChannel) fetchChatMessages();
+      }, 3000);
       return () => clearInterval(intervalId);
     }
-  }, [activeTab, activeChatChannel]);
+  }, [activeTab, activeChatChannel, availableChannels, globalDirectory]);
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -402,7 +407,7 @@ export default function ZenTechDashboard() {
     if (!chatInput.trim()) return;
     setIsSendingChat(true);
     const { error } = await supabase.from("chats").insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: chatInput.trim() }]);
-    if (!error) { setChatInput(""); fetchChatMessages(); }
+    if (!error) { setChatInput(""); fetchChatMessages(); fetchChatPreviews(); }
     setIsSendingChat(false);
   };
 
@@ -426,12 +431,145 @@ export default function ZenTechDashboard() {
     await supabase.from("chats").insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: null, media_url: publicUrlData.publicUrl, media_type: mediaType }]);
     if (chatMediaInputRef.current) chatMediaInputRef.current.value = "";
     fetchChatMessages();
+    fetchChatPreviews();
     setIsSendingChat(false);
   };
 
-  // ==========================================
-  // GENERAL UTILS
-  // ==========================================
+  const getMessageColorStyle = (teamName, role) => {
+    if (role === 'admin') return { border: 'border-yellow-400', bg: 'bg-yellow-50', text: 'text-yellow-800' };
+    if (teamName === 'Core AI & Backend') return { border: 'border-purple-400', bg: 'bg-purple-50', text: 'text-purple-800' };
+    if (teamName === 'Tools & Integrations') return { border: 'border-blue-400', bg: 'bg-blue-50', text: 'text-blue-800' };
+    if (teamName === 'QA & Operations') return { border: 'border-red-400', bg: 'bg-red-50', text: 'text-red-800' };
+    return { border: 'border-slate-300', bg: 'bg-white', text: 'text-slate-800' }; 
+  };
+
+  const showGroupInfo = () => {
+    const activeChObj = availableChannels.find(c => c.id === activeChatChannel);
+    if(!activeChObj) return;
+
+    window.viewFullscreenAvatar = (url) => {
+      Swal.fire({ imageUrl: url, imageAlt: 'Group Avatar', showConfirmButton: false, width: 'auto', background: 'transparent', backdrop: `rgba(0,0,0,0.8)` });
+    };
+
+    const membersHtml = activeChObj.memberIds.map(id => {
+       const user = globalDirectory[id];
+       if(!user) return '';
+       
+       let roleBadge = '';
+       if (user.role === 'admin') roleBadge = '👑 Admin';
+       else if (user.role === 'team_lead') roleBadge = `✅ Lead - ${user.team_name || 'Unassigned'}`;
+       else roleBadge = `🛠️ ${user.team_name || 'AI Engineer'}`;
+
+       return `
+         <div class="flex items-center gap-3 bg-white p-2 rounded-lg shadow-sm border border-slate-100">
+            <img src="${user.avatar_url || 'https://i.ibb.co/L5tKzDq/default-group.png'}" class="w-10 h-10 rounded-full object-cover border border-slate-200" />
+            <div class="flex flex-col text-left">
+               <span class="text-sm font-bold text-slate-800">${user.full_name}</span>
+               <span class="text-[0.65rem] font-bold text-slate-500 uppercase tracking-widest">${roleBadge}</span>
+            </div>
+         </div>
+       `;
+    }).join('');
+
+    Swal.fire({
+      html: `
+        <div class="bg-slate-50 rounded-xl overflow-hidden shadow-lg border border-slate-200 mt-2">
+           <div class="relative h-32 bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center">
+              <img src="${activeChObj.avatar_url}" class="w-24 h-24 rounded-full object-cover border-4 border-white absolute -bottom-12 cursor-pointer shadow-md transition-transform hover:scale-105" onclick="window.viewFullscreenAvatar('${activeChObj.avatar_url}')" title="View Fullscreen" />
+              ${activeChObj.canEdit ? `
+                <button onclick="document.getElementById('hiddenGroupAvatarUploader').click()" class="absolute right-3 top-3 bg-black/30 hover:bg-black/50 text-white p-2 rounded-full backdrop-blur-sm transition-colors shadow-sm" title="Change Group Photo">
+                   <i class="fa-solid fa-camera"></i>
+                </button>
+              ` : ''}
+           </div>
+           <div class="pt-16 pb-4 text-center border-b border-slate-200">
+              <h2 class="text-xl font-bold text-slate-800">${activeChObj.label}</h2>
+              <p class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Group · ${activeChObj.memberIds.length} participants</p>
+           </div>
+           <div class="text-left px-4 py-4 bg-slate-50">
+              <h3 class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Participants</h3>
+              <div class="max-h-60 overflow-y-auto space-y-2 custom-scrollbar pr-2">
+                 ${membersHtml}
+              </div>
+           </div>
+        </div>
+      `,
+      showConfirmButton: false,
+      showCloseButton: true,
+      background: 'transparent',
+      padding: '0',
+      width: '450px'
+    });
+  };
+
+  const handleBanStaff = async (staff) => {
+    if (staff.ban_status !== 'none') {
+      if (staff.revoke_count >= 1) return Swal.fire("Revocation Blocked", "This staff member has exhausted their 1 revoke chance. The permanent ban cannot be lifted.", "error");
+      
+      Swal.fire({
+        title: `Revoke Ban for ${staff.full_name}?`,
+        text: "You have 1 chance to revoke a ban per staff member. After this, any future ban will be permanent and irreversible.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Unban',
+        confirmButtonColor: '#10b981'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          const { data: updatedData, error } = await supabase.from('profiles').update({ ban_status: 'none', revoke_count: 1, ban_reason: null, ban_until: null }).eq('id', staff.id).select();
+          if (error || !updatedData || updatedData.length === 0) Swal.fire('Database Action Blocked', `Supabase security (RLS) prevented this action. Did you run the SQL code?`, 'error');
+          else {
+            await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Revoked ban for ${staff.full_name}` }]);
+            Swal.fire('Restored', 'Staff access has been reinstated.', 'success');
+            fetchAllStaff();
+          }
+        }
+      });
+      return;
+    }
+
+    const isTempDisabled = staff.revoke_count >= 1;
+    const { value: formValues } = await Swal.fire({
+      title: `Ban ${staff.full_name}`,
+      html: `
+        <div style="text-align: left; font-size: 14px;">
+          <p style="margin-bottom: 15px; color: #475569;"><strong>Role:</strong> ${staff.role.replace('_',' ')}</p>
+          <label style="display: block; margin-bottom: 8px;">
+            <input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? 'disabled' : 'checked'}> 
+            <span style="${isTempDisabled ? 'text-decoration: line-through; color: #94a3b8;' : ''}">Temporary Ban (24 Hours)</span>
+          </label>
+          <label style="display: block; margin-bottom: 15px;">
+            <input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? 'checked' : ''}> 
+            <strong style="color: #b91c1c;">Permanent Ban</strong> 
+            ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ''}
+          </label>
+          <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px;"></textarea>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Enforce Ban',
+      confirmButtonColor: '#dc2626',
+      preConfirm: () => {
+        const type = document.getElementById('tempBan').checked ? 'temporary' : 'permanent';
+        const reason = document.getElementById('banReason').value;
+        if (!reason) Swal.showValidationMessage('A reason for the ban is required.');
+        return { type, reason };
+      }
+    });
+
+    if (formValues) {
+      const banEnd = formValues.type === 'temporary' ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+      const { data: updatedData, error } = await supabase.from('profiles').update({ ban_status: formValues.type, ban_reason: formValues.reason, ban_until: banEnd }).eq('id', staff.id).select();
+
+      if (error || !updatedData || updatedData.length === 0) Swal.fire('Database Action Blocked', `Supabase security (RLS) prevented the ban. Please run the SQL command in your database!`, 'error');
+      else {
+        await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Issued a ${formValues.type} ban to ${staff.full_name}. Reason: ${formValues.reason}` }]);
+        Swal.fire('Banned', `The user has been successfully blocked from the portal.`, 'success');
+        fetchAllStaff();
+      }
+    }
+  };
+
   const fetchNotifications = async (userId) => {
     const { data, error } = await supabase.from("notifications").select("*").eq("user_id", userId).eq("is_read", false).order("created_at", { ascending: false });
     if (!error && data && data.length > 0) {
@@ -441,9 +579,7 @@ export default function ZenTechDashboard() {
         icon: "info",
         confirmButtonText: "Acknowledge",
         confirmButtonColor: "#2563eb",
-      }).then(async () => {
-        await supabase.from("notifications").update({ is_read: true }).eq("id", data[0].id);
-      });
+      }).then(async () => { await supabase.from("notifications").update({ is_read: true }).eq("id", data[0].id); });
     }
   };
 
@@ -451,9 +587,7 @@ export default function ZenTechDashboard() {
     const { data: assignedData } = await supabase.from("team_members").select("user_id");
     const assignedIds = assignedData ? assignedData.map((item) => item.user_id) : [];
     const { data: engineers, error } = await supabase.from("profiles").select("id, full_name, role").eq("role", "ai_engineer");
-    if (!error && engineers) {
-      setUnassignedEngineers(engineers.filter((eng) => !assignedIds.includes(eng.id)));
-    }
+    if (!error && engineers) setUnassignedEngineers(engineers.filter((eng) => !assignedIds.includes(eng.id)));
   };
 
   const fetchAllTeamsWithMembers = async () => {
@@ -465,9 +599,7 @@ export default function ZenTechDashboard() {
     const { data, error } = await supabase.from("teams").select(`id, name, team_members ( user_id, profiles:user_id ( id, full_name, role ) )`).eq("lead_id", leadId).single();
     if (!error && data) {
       setTeamId(data.id);
-      if (data.team_members) {
-        setTeamMembers(data.team_members.map((tm) => ({ id: tm.profiles?.id, name: tm.profiles?.full_name, module: data.name })));
-      }
+      if (data.team_members) setTeamMembers(data.team_members.map((tm) => ({ id: tm.profiles?.id, name: tm.profiles?.full_name, module: data.name })));
     }
   };
 
@@ -487,6 +619,7 @@ export default function ZenTechDashboard() {
             setUnassignedEngineers((prev) => prev.filter((m) => m.id !== memberId));
             fetchAllTeamsWithMembers();
             if (userProfile.role === 'admin') fetchAllStaff();
+            await fetchGlobalDirectory();
             await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Deployed ${memberName} to ${result.value}` }]);
             Swal.fire("Assigned!", `${memberName} has been deployed.`, "success");
           }
@@ -684,7 +817,6 @@ export default function ZenTechDashboard() {
     if (userProfile && activeTab === "staff" && userProfile.role === "admin") fetchAllStaff();
   }, [userProfile, activeTab]);
 
-  // Dashboard Chart Calculations
   const payalTasks = tasks.filter((t) => t.team === "Core AI & Backend").length;
   const sushantTasks = tasks.filter((t) => t.team === "Tools & Integrations").length;
   const pratikTasks = tasks.filter((t) => t.team === "QA & Operations").length;
@@ -701,7 +833,6 @@ export default function ZenTechDashboard() {
   const failPct = (failTasks / totalLeadTasks) * 100;
   const leadConicGradient = `conic-gradient(#22c55e 0% ${sucPct}%, #ef4444 ${sucPct}% ${sucPct + failPct}%, #eab308 ${sucPct + failPct}% 100%)`;
 
-  // FIX: Clicking icons changes tab but DOES NOT expand the sidebar
   const NavButton = ({ id, icon, label, allowedRoles }) => {
     if (userProfile && !allowedRoles.includes(userProfile.role)) return null;
     const isActive = activeTab === id;
@@ -731,6 +862,8 @@ export default function ZenTechDashboard() {
       </div>
     );
 
+  const activeChObj = availableChannels.find(c => c.id === activeChatChannel);
+
   return (
     <>
       <style
@@ -746,11 +879,12 @@ export default function ZenTechDashboard() {
         }}
       />
 
+      <input type="file" accept="image/*" id="hiddenGroupAvatarUploader" className="hidden" onChange={handleGroupAvatarUpload} />
+
       <div className="flex h-screen overflow-hidden text-slate-800 antialiased font-sans bg-slate-50">
         {/* Sidebar */}
         <aside className={`${isSidebarCollapsed ? "w-20" : "w-64"} bg-white border-r border-slate-200 flex flex-col justify-between flex-shrink-0 z-20 whitespace-nowrap transition-all duration-300 ease-in-out`}>
           <div className="h-full overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar">
-            {/* Sidebar Header with Hamburger */}
             <div className={`p-4 flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} border-b border-slate-100 min-h-[4.5rem]`}>
               {!isSidebarCollapsed && (
                 <img src="https://i.ibb.co/v6WY6JcJ/Chat-GPT-Image-Jul-19-2026-04-02-21-PM.png" alt="ZenTech Logo" className="max-h-10 w-auto object-contain" />
@@ -806,7 +940,6 @@ export default function ZenTechDashboard() {
 
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col h-screen overflow-hidden w-full">
-          {/* Main Header */}
           <header className="bg-white h-[4.5rem] border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0 z-10 w-full">
             <div className="flex items-center gap-4">
               <span className="inline-block px-3 py-1.5 bg-slate-100 text-slate-600 rounded-md text-[0.65rem] font-bold uppercase tracking-widest border border-slate-200 shadow-sm">
@@ -851,7 +984,6 @@ export default function ZenTechDashboard() {
                     <p className="text-slate-500 text-sm mt-1">Comprehensive registry of all corporate personnel.</p>
                   </div>
 
-                  {/* Search and Filters */}
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col md:flex-row gap-4 items-center">
                     <div className="flex-1 w-full">
                       <div className="relative">
@@ -879,7 +1011,6 @@ export default function ZenTechDashboard() {
                     </div>
                   </div>
 
-                  {/* Staff Table */}
                   <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto flex-1">
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead>
@@ -948,28 +1079,65 @@ export default function ZenTechDashboard() {
               {/* SECTION: CHAT / COMMS NETWORK */}
               {activeTab === "chat" && (
                 <div className="h-full flex gap-6 pb-2">
-                  <div className="w-72 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden flex-shrink-0">
+                  <div className="w-80 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden flex-shrink-0">
                     <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
                       <i className="fa-solid fa-walkie-talkie text-blue-600 text-xl"></i>
                       <h2 className="font-bold text-slate-800 text-lg">Chats</h2>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
-                      {availableChannels.map((ch) => (
-                        <button key={ch.id} onClick={() => setActiveChatChannel(ch.id)} className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors flex items-center gap-3 ${activeChatChannel === ch.id ? "bg-slate-800 text-white shadow-md" : "text-slate-600 hover:bg-slate-100"}`}>
-                          <i className={`fa-solid ${ch.id === "Admin" ? "fa-crown text-yellow-500" : "fa-hashtag"} ${activeChatChannel === ch.id && ch.id !== "Admin" ? "text-blue-400" : ""}`}></i>
-                          <span className="truncate">{ch.label}</span>
-                        </button>
-                      ))}
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                      {availableChannels.map((ch) => {
+                        const preview = channelPreviews[ch.id];
+                        const memberNames = ch.memberIds.map(id => globalDirectory[id]?.full_name?.split(' ')[0]).filter(Boolean).join(', ');
+
+                        return (
+                          <button 
+                            key={ch.id} 
+                            onClick={() => setActiveChatChannel(ch.id)} 
+                            className={`w-full text-left px-3 py-3 rounded-lg transition-colors flex items-center gap-3 ${activeChatChannel === ch.id ? "bg-slate-50 border border-slate-200 shadow-sm" : "border border-transparent hover:bg-slate-50"}`}
+                          >
+                            <div className="relative shrink-0">
+                              <img src={ch.avatar_url} alt="Group" className="w-12 h-12 rounded-full object-cover bg-slate-100 border border-slate-200 shadow-sm" />
+                            </div>
+                            <div className="flex flex-col overflow-hidden w-full">
+                              <div className="flex justify-between items-center w-full">
+                                <span className="font-bold text-slate-800 text-sm truncate">{ch.label}</span>
+                                {preview?.time && <span className={`text-[0.65rem] whitespace-nowrap ${preview.count > 0 && activeChatChannel !== ch.id ? 'text-green-600 font-bold' : 'text-slate-400'}`}>{preview.time}</span>}
+                              </div>
+                              <div className="flex justify-between items-center w-full mt-0.5">
+                                <span className="text-xs text-slate-500 truncate pr-2">
+                                  {preview ? <span className="font-medium text-slate-700">{preview.sender}: </span> : ''}
+                                  {preview ? preview.text : 'No messages yet'}
+                                </span>
+                                {preview?.count > 0 && activeChatChannel !== ch.id && (
+                                  <span className="bg-green-500 text-white text-[0.65rem] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                                    {preview.count}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
                   <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></span>
-                        <h3 className="font-bold text-slate-800">{activeChatChannel}</h3>
-                      </div>
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center relative">
+                      {activeChObj && (
+                        <div className="flex items-center gap-4 cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors w-full" onClick={showGroupInfo} title="View Group Info">
+                          <div className="relative group">
+                            <img src={activeChObj.avatar_url} alt="Group Avatar" className="w-10 h-10 rounded-full object-cover border border-slate-300 shadow-sm" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-slate-800 truncate">{activeChObj.label}</h3>
+                            <p className="text-[0.65rem] text-slate-500 font-medium truncate">
+                               {activeChObj.memberIds.map(id => globalDirectory[id]?.full_name?.split(' ')[0]).filter(Boolean).join(', ')}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
+
                     <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50 custom-scrollbar">
                       {chatMessages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
@@ -978,26 +1146,48 @@ export default function ZenTechDashboard() {
                         </div>
                       ) : (
                         chatMessages.map((msg) => {
-                          const isMe = msg.profiles?.full_name === userProfile.full_name;
+                          const isMe = msg.sender_id === userProfile.id;
+                          const senderInfo = globalDirectory[msg.sender_id] || {};
+                          const teamStyle = getMessageColorStyle(senderInfo.team_name, senderInfo.role);
+                          
+                          const readByNames = (msg.read_by || [])
+                            .filter(id => id !== msg.sender_id)
+                            .map(id => globalDirectory[id]?.full_name?.split(' ')[0])
+                            .filter(Boolean);
+                          const readByText = readByNames.length > 0 ? `Seen by ${readByNames.join(', ')}` : '';
+
                           return (
                             <div key={msg.id} className={`flex w-full ${isMe ? "justify-end" : "justify-start"} mb-4`}>
                               <div className={`flex gap-3 max-w-[80%] ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+                                
                                 {msg.profiles?.avatar_url ? (
-                                  <img src={msg.profiles.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover shadow-sm self-end" />
+                                  <img src={msg.profiles.avatar_url} alt="Avatar" className="w-8 h-8 rounded-full object-cover shadow-sm self-end border border-slate-200" />
                                 ) : (
-                                  <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shadow-sm self-end">
-                                    {msg.profiles?.full_name?.charAt(0)}
+                                  <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center font-bold text-xs shadow-sm self-end border border-slate-200">
+                                    {msg.profiles?.full_name?.charAt(0) || '?'}
                                   </div>
                                 )}
+
                                 <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-                                  <span className="text-[0.65rem] font-bold text-slate-400 mb-1 px-1">
-                                    {isMe ? "You" : msg.profiles?.full_name}
-                                    <span className="font-normal opacity-75 ml-2">{new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                                  </span>
-                                  <div className={`px-4 py-2.5 rounded-2xl shadow-sm text-sm ${isMe ? "bg-blue-600 text-white rounded-br-sm" : "bg-white border border-slate-200 text-slate-800 rounded-bl-sm"}`}>
-                                    {msg.media_url && msg.media_type === "image" && ( <img src={msg.media_url} alt="Chat Upload" className="max-w-full h-auto rounded-lg mb-2 border border-black/10" style={{ maxHeight: "300px" }} /> )}
-                                    {msg.media_url && msg.media_type === "video" && ( <video src={msg.media_url} controls className="max-w-full h-auto rounded-lg mb-2 border border-black/10" style={{ maxHeight: "300px" }} /> )}
-                                    {msg.message && <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>}
+                                  <div className={`px-4 py-2.5 rounded-2xl shadow-sm text-sm border-2 ${teamStyle.border} ${teamStyle.bg} ${isMe ? "rounded-br-sm" : "rounded-bl-sm"}`}>
+                                    <div className="flex justify-between items-baseline mb-1 gap-4 border-b border-black/5 pb-1">
+                                      <span className={`block font-bold text-xs ${teamStyle.text}`}>
+                                        {isMe ? "You" : (msg.profiles?.full_name || 'Unknown')}
+                                      </span>
+                                      <span className="text-[0.6rem] font-normal opacity-70 text-slate-500">
+                                        {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    </div>
+                                    
+                                    {msg.media_url && msg.media_type === "image" && ( <img src={msg.media_url} alt="Chat Upload" className="max-w-full h-auto rounded-lg mb-2 border border-black/10 mt-2" style={{ maxHeight: "300px" }} /> )}
+                                    {msg.media_url && msg.media_type === "video" && ( <video src={msg.media_url} controls className="max-w-full h-auto rounded-lg mb-2 border border-black/10 mt-2" style={{ maxHeight: "300px" }} /> )}
+                                    {msg.message && <p className="whitespace-pre-wrap leading-relaxed text-slate-800">{msg.message}</p>}
+                                    
+                                    {isMe && readByText && (
+                                      <div className="text-[0.6rem] text-slate-400 mt-2 text-right italic font-medium flex justify-end items-center gap-1">
+                                        <i className="fa-solid fa-check-double text-blue-400"></i> {readByText}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
