@@ -372,7 +372,7 @@ export default function ZenTechDashboard() {
 
     baseChannels.push({
       id: "All Teams",
-      label: "All Teams (Global Network)",
+      label: "All Teams ",
       avatar_url: getAvatar("All Teams"),
       memberIds: allUserIds,
       lead: "System Administration",
@@ -669,7 +669,7 @@ export default function ZenTechDashboard() {
            </div>
            <div class="pt-16 pb-4 text-center border-b border-slate-200">
               <h2 class="text-xl font-bold text-slate-800">${activeChObj.label}</h2>
-              <p class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Group · ${activeChObj.memberIds.length} participants</p>
+              <p class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">Group · ${activeChObj.memberIds.length} Staffs</p>
            </div>
            <div class="text-left px-4 py-4 bg-slate-50">
               <h3 class="text-[0.65rem] font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Participants</h3>
@@ -852,24 +852,144 @@ export default function ZenTechDashboard() {
     });
   };
 
-  const handleAssignTaskToMember = async (memberId, memberName) => {
+const handleAssignTaskToMember = async (memberId, memberName) => {
+    // 1. Fetch current workload / previous tasks
+    Swal.fire({ title: 'Retrieving Operative Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading(), background: '#ffffff' });
+    
+    const { data: previousTasks, error: fetchError } = await supabase
+      .from('tasks')
+      .select('title, status, created_at')
+      .eq('assigned_to', memberId)
+      .order('created_at', { ascending: false })
+      .limit(6); // Increased limit slightly since we have more vertical room now
+
+    if (fetchError) {
+      Swal.fire('Error', 'Could not fetch operative telemetry.', 'error');
+      return;
+    }
+
+    // 2. Build the dynamic workload history HTML for the Right Column
+    let workloadHtml = '';
+    if (!previousTasks || previousTasks.length === 0) {
+      workloadHtml = `
+        <div style="text-align: center; padding: 60px 20px; color: #94a3b8;">
+          <i class="fa-solid fa-clipboard-check" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i>
+          <div style="font-size: 14px; font-weight: 700;">No previous assignments found.</div>
+          <div style="font-size: 12px; font-weight: 500; margin-top: 4px;">Operative is fully available.</div>
+        </div>`;
+    } else {
+      workloadHtml = `<div style="display: flex; flex-direction: column; gap: 12px; max-height: 380px; overflow-y: auto; padding-right: 6px;" class="custom-scrollbar">`;
+      previousTasks.forEach(t => {
+         let bg = '#fef3c7', col = '#a16207';
+         if (t.status === 'completed' || t.status === 'approved') { bg = '#dcfce7'; col = '#15803d'; }
+         else if (t.status === 'rejected') { bg = '#fee2e2'; col = '#b91c1c'; }
+         else if (t.status === 'pending_completion_approval' || t.status === 'pending_approval') { bg = '#f3e8ff'; col = '#7e22ce'; }
+         else if (t.status === 'in_progress') { bg = '#e0e7ff'; col = '#4f46e5'; }
+
+         workloadHtml += `
+           <div style="padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; transition: all 0.2s;">
+             <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #1e293b; line-height: 1.4; text-align: left;">${t.title.replace(/\[.*?\]\s*/, '')}</p>
+             <div style="display: flex; justify-content: space-between; align-items: center;">
+               <span style="font-size: 10px; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">
+                 <i class="fa-regular fa-calendar" style="margin-right: 4px;"></i>${new Date(t.created_at).toLocaleDateString()}
+               </span>
+               <span style="background: ${bg}; color: ${col}; padding: 4px 10px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${t.status.replace(/_/g, ' ')}</span>
+             </div>
+           </div>
+         `;
+      });
+      workloadHtml += `</div>`;
+    }
+
+    // 3. Launch the Landscape Enterprise Modal
     Swal.fire({
-      title: `Assign task to ${memberName}`,
-      html: `<input type="text" id="task-desc" class="swal2-input" placeholder="Enter task directive description...">`,
-      confirmButtonText: "Assign Task",
+      html: `
+        <div style="display: flex; gap: 32px; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          
+          <!-- LEFT COLUMN: Assignment Form -->
+          <div style="flex: 1; display: flex; flex-direction: column;">
+            <div style="margin-bottom: 24px;">
+              <h2 style="margin: 0; font-size: 28px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px;">Task Assign Panel</h2>
+              <p style="margin: 6px 0 0 0; font-size: 14px; color: #64748b; font-weight: 600;">To: <strong style="color: #4f46e5; background: #e0e7ff; padding: 2px 8px; border-radius: 6px;">${memberName}</strong></p>
+            </div>
+
+            <div style="background: #ffffff; padding: 0; flex-grow: 1; display: flex; flex-direction: column;">
+               <label style="display: block; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Directive Description</label>
+               <textarea id="task-desc" placeholder="Detail the exact parameters of this assignment..." style="width: 100%; box-sizing: border-box; flex-grow: 1; min-height: 200px; padding: 16px; font-size: 14px; font-weight: 500; color: #334155; border: 1px solid #cbd5e1; border-radius: 12px; resize: none; margin-bottom: 24px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#6366f1'; this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none'"></textarea>
+               
+               <label style="display: block; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Priority Level</label>
+               <select id="task-priority" style="width: 100%; box-sizing: border-box; padding: 16px; font-size: 14px; font-weight: 700; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; cursor: pointer; background: #f8fafc; appearance: none; transition: all 0.2s;" onfocus="this.style.borderColor='#6366f1'; this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none'">
+                 <option value="Normal">Low Priority</option>
+                 <option value="Elevated">Meduim Priority</option>
+                 <option value="Critical">High Priority</option>
+               </select>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: Task History -->
+          <div style="flex: 1; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid #f1f5f9; padding-left: 32px;">
+            <div style="margin-bottom: 24px; display: flex; align-items: center;">
+               <div style="width: 32px; height: 32px; background: #f1f5f9; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 12px;">
+                 <i class="fa-solid fa-clock-rotate-left text-slate-500"></i>
+               </div>
+               <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #0f172a;">Operative History</h2>
+            </div>
+            
+            <div style="flex-grow: 1;">
+              ${workloadHtml}
+            </div>
+          </div>
+
+        </div>
+      `,
+      width: '950px', // Massive width for landscape mode
+      padding: '40px',
+      background: '#ffffff',
+      showCancelButton: true,
+      buttonsStyling: true,
+      confirmButtonText: 'Assign Task <i class="fa-solid fa-paper-plane" style="margin-left: 8px;"></i>',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#4f46e5',
+      cancelButtonColor: '#94a3b8',
       preConfirm: () => {
-        const val = document.getElementById("task-desc").value;
-        if (!val) Swal.showValidationMessage("Please enter task description");
-        return val;
+        const desc = document.getElementById("task-desc").value;
+        const priority = document.getElementById("task-priority").value;
+        if (!desc.trim()) {
+          Swal.showValidationMessage("A detailed task description is required.");
+          return false;
+        }
+        return { desc: desc.trim(), priority };
       }
     }).then(async (result) => {
       if (result.isConfirmed && result.value) {
-        const taskTitle = result.value;
-        const { error: taskError } = await supabase.from("tasks").insert([{ title: taskTitle, status: "in_progress", team_id: teamId || null, assigned_to: memberId, assigned_by_name: userProfile.full_name }]);
+        const { desc, priority } = result.value;
+        const taskTitle = `[${priority}] ${desc}`;
+        
+        Swal.fire({ title: 'Dispatching Directive...', allowOutsideClick: false, didOpen: () => Swal.showLoading(), background: '#ffffff' });
+
+        const { error: taskError } = await supabase.from("tasks").insert([{ 
+          title: taskTitle, 
+          status: "in_progress", 
+          team_id: teamId || null, 
+          assigned_to: memberId, 
+          assigned_by_name: userProfile.full_name 
+        }]);
+        
         if (!taskError) {
-          await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Assigned task to ${memberName}: "${taskTitle}"` }]);
-          Swal.fire("Assigned!", `Task dispatched.`, "success");
+          await supabase.from("notifications").insert([{ user_id: memberId, message: `📋 New ${priority} Task: ${desc.substring(0, 40)}...` }]);
+          await supabase.from("activity_logs").insert([{ actor_name: userProfile.full_name, actor_role: userProfile.role, action_description: `Assigned a ${priority.toUpperCase()} directive to ${memberName}` }]);
+          
+          Swal.fire({
+            title: "Task Dispatched!",
+            html: `<p style="font-size: 14px; font-weight: 500; color: #64748b;">The directive has been securely transmitted to ${memberName}.</p>`,
+            icon: "success",
+            confirmButtonColor: "#10b981",
+            background: '#ffffff',
+            confirmButtonText: "Acknowledged"
+          });
           fetchTasks();
+        } else {
+          Swal.fire("Error", "Failed to dispatch task: " + taskError.message, "error");
         }
       }
     });
@@ -1060,7 +1180,7 @@ export default function ZenTechDashboard() {
   const totalUnreadChats = Object.values(channelPreviews).reduce((sum, ch) => sum + (ch.count || 0), 0);
   const unreadDashboardMessages = dashboardRecentMessages.filter(msg => msg.unreadCount > 0);
 
-  const NavButton = ({ id, icon, label, allowedRoles, badgeCount }) => {
+ const NavButton = ({ id, icon, label, allowedRoles, badgeCount }) => {
     if (userProfile && !allowedRoles.includes(userProfile.role)) return null;
     const isActive = activeTab === id;
     return (
@@ -1068,12 +1188,12 @@ export default function ZenTechDashboard() {
         <button
           onClick={() => setActiveTab(id)}
           title={isSidebarCollapsed ? label : ""}
-          className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 ${isActive ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30" : "text-slate-400 hover:text-white hover:bg-white/5"}`}
+          className={`group w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} gap-4 px-4 py-3.5 rounded-2xl text-sm font-bold transition-all duration-300 ${isActive ? "bg-indigo-600 text-white shadow-[0_4px_16px_rgba(79,70,229,0.3)]" : "text-slate-500 hover:text-indigo-700 hover:bg-indigo-50/70"}`}
         >
           <div className="relative flex items-center justify-center">
-            <i className={`${icon} text-[1.1rem] ${isActive ? "text-white" : "text-slate-400"}`}></i>
+            <i className={`${icon} text-[1.1rem] transition-colors duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-indigo-500"}`}></i>
             {isSidebarCollapsed && badgeCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[0.55rem] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center border-2 border-slate-900 shadow-sm">
+              <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[0.55rem] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center border-2 border-white shadow-sm">
                 {badgeCount}
               </span>
             )}
@@ -1090,8 +1210,8 @@ export default function ZenTechDashboard() {
   };
 
   const SidebarHeaderDivider = ({ label }) => {
-    if (isSidebarCollapsed) return <div className="h-[1px] w-8 bg-slate-800 mx-auto my-5"></div>;
-    return <h2 className="px-4 text-[0.65rem] font-bold text-slate-500 mb-3 mt-6 uppercase tracking-widest">{label}</h2>;
+    if (isSidebarCollapsed) return <div className="h-[2px] w-8 bg-slate-100 mx-auto my-5 rounded-full"></div>;
+    return <h2 className="px-4 text-[0.65rem] font-extrabold text-slate-400 mb-3 mt-6 uppercase tracking-widest">{label}</h2>;
   };
 
   if (!isMounted || !userProfile)
@@ -1184,21 +1304,18 @@ export default function ZenTechDashboard() {
           </div>
         )}
 
-        {/* PREMIUM DARK SIDEBAR */}
-        <aside className={`${isSidebarCollapsed ? "w-24" : "w-[280px]"} bg-[#0B1437] flex flex-col justify-between flex-shrink-0 z-20 whitespace-nowrap transition-all duration-300 ease-in-out`}>
+     {/* PREMIUM ENTERPRISE WHITE SIDEBAR */}
+        <aside className={`${isSidebarCollapsed ? "w-24" : "w-[280px]"} bg-white border-r border-slate-100 shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex flex-col justify-between flex-shrink-0 z-20 whitespace-nowrap transition-all duration-300 ease-in-out`}>
           <div className="h-full overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar py-6">
             
-            {/* ZenTech Logo Restored (Ref Image 2) */}
+            {/* Custom Image Logo */}
             <div className={`px-6 flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} mb-8`}>
               {!isSidebarCollapsed && (
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#4318FF] rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                     <i className="fa-solid fa-bolt text-xl"></i>
-                  </div>
-                  <span className="font-black text-white text-2xl tracking-tight">ZenTech</span>
+                <div className="flex items-center cursor-pointer transition-transform duration-300 hover:scale-105">
+                  <img src="https://i.ibb.co/v6WY6JcJ/Chat-GPT-Image-Jul-19-2026-04-02-21-PM.png" alt="Zen-Tech Network" className="h-10 w-auto object-contain drop-shadow-sm" />
                 </div>
               )}
-              <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-400 hover:text-white focus:outline-none p-2 rounded-xl hover:bg-white/10 transition-colors shrink-0">
+              <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="text-slate-400 hover:text-indigo-600 focus:outline-none p-2 rounded-xl hover:bg-indigo-50 transition-colors shrink-0">
                 <i className="fa-solid fa-bars text-xl"></i>
               </button>
             </div>
@@ -1211,7 +1328,7 @@ export default function ZenTechDashboard() {
                 <SidebarHeaderDivider label="Communications" />
                 <ul className="space-y-1">
                   <NavButton id="chat" icon="fa-solid fa-comments" label="Chats" allowedRoles={["admin", "team_lead", "ai_engineer"]} badgeCount={totalUnreadChats} />
-                  <NavButton id="meetings" icon="fa-solid fa-video" label="War Rooms" allowedRoles={["admin", "team_lead", "ai_engineer"]} />
+                  <NavButton id="meetings" icon="fa-solid fa-video" label="Team Connect" allowedRoles={["admin", "team_lead", "ai_engineer"]} />
                 </ul>
               </div>
               {(userProfile.role === "admin" || userProfile.role === "team_lead") && (
@@ -1240,8 +1357,9 @@ export default function ZenTechDashboard() {
             </div>
           </div>
 
+          {/* Premium Terminate Session Button */}
           <div className="p-6">
-            <button onClick={handleLogout} className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm font-bold text-rose-400 hover:text-white hover:bg-rose-500 rounded-2xl transition-all duration-300`}>
+            <button onClick={handleLogout} className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm font-bold text-rose-500 bg-rose-50 border border-transparent hover:border-rose-100 hover:text-white hover:bg-rose-500 hover:shadow-[0_4px_16px_rgba(244,63,94,0.3)] rounded-2xl transition-all duration-300`}>
               <i className="fa-solid fa-arrow-right-from-bracket text-lg"></i>
               {!isSidebarCollapsed && ( <span className="ml-3">Terminate Session</span> )}
             </button>
@@ -1603,7 +1721,7 @@ export default function ZenTechDashboard() {
                         
                         <textarea 
                           className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-[#2B3674] px-2 py-3 resize-none custom-scrollbar outline-none" 
-                          placeholder={`Message # ${activeChatChannel}... (Shift+Enter for new line)`} 
+                          placeholder={`Type here to send mssage to # ${activeChatChannel}`} 
                           value={chatInput} 
                           rows={chatInput.split('\n').length > 1 ? Math.min(chatInput.split('\n').length, 5) : 1}
                           onChange={(e) => setChatInput(e.target.value)} 
@@ -1626,115 +1744,170 @@ export default function ZenTechDashboard() {
                 </div>
               )}
 
-              {/* SECTION: WAR ROOM MEETINGS */}
+             {/* SECTION: ROOM MEETINGS */}
               {activeTab === "meetings" && !activeMeetingRoom && (
-                <div className="h-full flex flex-col animate-in fade-in duration-500">
-                  <div className="flex justify-between items-end mb-8">
+                <div className="h-full flex flex-col animate-in fade-in duration-500 w-full">
+                  <div className="flex justify-between items-end mb-8 w-full">
                     <div>
-                      <h1 className="text-[32px] font-black text-[#2B3674] tracking-tight">War Rooms</h1>
-                      <p className="text-[#A3AED0] text-sm mt-1 font-semibold">Select a division network or join a custom secure feed.</p>
+                      <h1 className="text-[32px] font-black text-[#2B3674] tracking-tight">Join Meeting Live</h1>
+                      <p className="text-[#A3AED0] text-sm mt-1 font-semibold">Select a division network to securely connect.</p>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-10">
+                  {/* Fluid edge-to-edge grid layout */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-10 w-full items-stretch">
                     {availableChannels.map(ch => (
                       <div 
                         key={`meet-${ch.id}`} 
-                        className="bg-white rounded-[24px] shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-white p-8 flex flex-col items-center text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden" 
+                        className="bg-white rounded-[24px] shadow-sm hover:shadow-[0_10px_40px_rgba(0,0,0,0.04)] border border-slate-100 p-6 flex flex-col items-center text-center hover:-translate-y-1 transition-all duration-300 cursor-pointer group relative overflow-hidden w-full h-full flex-grow" 
                         onClick={() => setActiveMeetingRoom(`ZenTech_OS_${ch.id.replace(/[^a-zA-Z0-9]/g, '')}`)}
                       >
-                        <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-rose-400 to-red-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        <img src={ch.avatar_url} className="w-24 h-24 rounded-full object-cover border-4 border-[#F4F7FE] shadow-md mb-5 group-hover:scale-110 transition-transform duration-500" />
-                        <h3 className="text-xl font-black text-[#2B3674]">{ch.label}</h3>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-[#A3AED0] mt-1 mb-6">{ch.memberIds.length} Participants</p>
-                        <span className="bg-rose-50 text-rose-600 px-6 py-2.5 rounded-xl text-xs font-bold flex items-center group-hover:bg-rose-500 group-hover:text-white transition-colors shadow-sm">
-                          <i className="fa-solid fa-video mr-2"></i> Join Encrypted Feed
-                        </span>
+                        {/* Premium Top Accent Line on Hover */}
+                        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        
+                        {/* Enlarged Avatar with subtle glow */}
+                        <div className="relative mt-4 mb-5">
+                          <div className="absolute inset-0 bg-indigo-500 rounded-full blur-md opacity-0 group-hover:opacity-20 transition-opacity duration-300"></div>
+                          <img src={ch.avatar_url} className="relative w-28 h-28 rounded-full object-cover border-4 border-white shadow-sm group-hover:scale-105 transition-transform duration-500 bg-slate-50" alt={ch.label} />
+                        </div>
+                        
+                        {/* Typography */}
+                        <h3 className="text-xl font-black text-[#2B3674] mb-1 px-2 line-clamp-1 w-full">{ch.label}</h3>
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-6">{ch.memberIds.length} Staff Members</p>
+                        
+                        <div className="flex-grow"></div> {/* Pushes the button perfectly to the bottom */}
+
+                        {/* Full-width Enterprise Button */}
+                        <button className="w-full bg-[#F4F7FE] text-indigo-600 hover:bg-indigo-600 hover:text-white py-3.5 rounded-xl text-sm font-extrabold flex items-center justify-center transition-colors duration-300 shadow-sm group-hover:shadow-md">
+                          <i className="fa-solid fa-video mr-2"></i> Join / Start Meeting
+                        </button>
                       </div>
                     ))}
-                  </div>
-
-                  <div className="bg-white rounded-[24px] shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-white p-8 max-w-2xl">
-                    <h3 className="text-lg font-black text-[#2B3674] mb-2"><i className="fa-solid fa-lock mr-2 text-indigo-500"></i>Custom Encrypted Link</h3>
-                    <p className="text-sm font-semibold text-[#A3AED0] mb-6">Generate an on-the-fly room ID to share with external clients.</p>
-                    <div className="flex gap-4">
-                        <input type="text" value={customRoomInput} onChange={e => setCustomRoomInput(e.target.value)} placeholder="Enter Private Room ID..." className="flex-1 border-none rounded-xl px-5 py-4 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-[#F4F7FE] text-[#2B3674]" />
-                        <button onClick={() => { if(customRoomInput.trim()) setActiveMeetingRoom(`ZenTech_OS_${customRoomInput.trim().replace(/[^a-zA-Z0-9]/g, '')}`)}} className="bg-[#0B1437] hover:bg-indigo-600 text-white px-8 py-4 rounded-xl text-sm font-bold shadow-lg shadow-indigo-900/20 transition-colors whitespace-nowrap">
-                          <i className="fa-solid fa-bolt mr-2"></i> Initialize Room
-                        </button>
-                    </div>
                   </div>
                 </div>
               )}
 
-              {/* SECTION: TEAM */}
+            {/* SECTION: TEAM */}
               {activeTab === "team" && (
-                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500">
-                  <div>
-                    <h1 className="text-[32px] font-black text-[#2B3674] tracking-tight">Team Management</h1>
-                    <p className="text-[#A3AED0] text-sm mt-1 font-semibold">{userProfile.role === "admin" ? "Deploy engineers to their designated divisions." : "Your designated team members."}</p>
+                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500 w-full">
+                  <div className="flex justify-between items-end mb-4">
+                    <div>
+                      <h1 className="text-[32px] font-black text-[#2B3674] tracking-tight">Team Management</h1>
+                      <p className="text-slate-500 text-sm mt-1 font-medium">{userProfile.role === "admin" ? "Deploy engineers to their designated divisions." : "Manage your designated team members."}</p>
+                    </div>
                   </div>
 
+                  {/* ADMIN VIEW: UNASSIGNED ENGINEERS */}
                   {userProfile.role === "admin" && (
-                    <div className="bg-white rounded-[24px] shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-white p-8">
-                      <h3 className="text-lg font-black text-[#2B3674] mb-6">Unassigned AI Engineers</h3>
+                    <div className="bg-white rounded-[24px] shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-8 transition-all duration-300">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-extrabold text-[#2B3674] flex items-center">
+                          <i className="fa-solid fa-user-plus text-indigo-500 mr-3"></i> Unassigned AI Engineers
+                        </h3>
+                        <span className="bg-rose-50 text-rose-600 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest">{unassignedEngineers.length} Pending</span>
+                      </div>
+
                       {unassignedEngineers.length === 0 ? (
-                        <div className="text-[#A3AED0] text-sm font-bold py-8 text-center border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50">No new member has been added. All engineers are deployed.</div>
+                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-[#f8fafc] rounded-2xl border border-dashed border-slate-200">
+                          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 border border-slate-100">
+                            <i className="fa-solid fa-check-double text-2xl text-emerald-500"></i>
+                          </div>
+                          <h4 className="text-lg font-bold text-[#2B3674] mb-1">All Operatives Deployed</h4>
+                          <p className="text-slate-500 text-sm font-medium">No new engineers are waiting for assignment.</p>
+                        </div>
                       ) : (
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-white text-[11px] uppercase text-[#A3AED0] font-extrabold border-b border-slate-100">
-                              <th className="px-6 py-4 tracking-widest">Engineer Name</th>
-                              <th className="px-6 py-4 tracking-widest">Role</th>
-                              <th className="px-6 py-4 text-right tracking-widest">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-sm font-medium">
-                            {unassignedEngineers.map((eng) => (
-                              <tr key={eng.id} className="border-b border-slate-50 hover:bg-[#F4F7FE]/50 transition-colors">
-                                <td className="px-6 py-4 font-bold text-[#2B3674]">{eng.full_name}</td>
-                                <td className="px-6 py-4 text-[#A3AED0] uppercase text-[10px] font-black tracking-widest">{eng.role.replace("_", " ")}</td>
-                                <td className="px-6 py-4 text-right">
-                                  <button onClick={() => handleAssignToTeam(eng.id, eng.full_name)} className="bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors">Assign to Team</button>
-                                </td>
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-[#f8fafc] text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-100">
+                                <th className="px-6 py-4 tracking-widest">Engineer Name</th>
+                                <th className="px-6 py-4 tracking-widest">Role</th>
+                                <th className="px-6 py-4 text-right tracking-widest">Action</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="text-sm font-medium">
+                              {unassignedEngineers.map((eng) => (
+                                <tr key={eng.id} className="border-b border-slate-50 hover:bg-[#f8fafc] transition-colors group">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm shadow-sm group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                                        {eng.full_name.charAt(0)}
+                                      </div>
+                                      <span className="font-bold text-[#2B3674] group-hover:text-indigo-700 transition-colors">{eng.full_name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest">{eng.role.replace("_", " ")}</span>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                    <button onClick={() => handleAssignToTeam(eng.id, eng.full_name)} className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md">
+                                      Assign to Team <i className="fa-solid fa-arrow-right ml-1"></i>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}
 
+                  {/* TEAM LEAD VIEW: ASSIGNED OPERATIVES */}
                   {userProfile.role === "team_lead" && (
-                    <div className="bg-white rounded-[24px] shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-white overflow-x-auto flex-1">
+                    <div className="bg-white rounded-[24px] shadow-sm hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-8 transition-all duration-300 flex-1 flex flex-col">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-extrabold text-[#2B3674] flex items-center">
+                          <i className="fa-solid fa-users text-indigo-500 mr-3"></i> Division Operatives
+                        </h3>
+                        <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest">{teamMembers.length} Active</span>
+                      </div>
+
                       {teamMembers.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-64 text-center">
-                          <i className="fa-solid fa-users-slash text-6xl text-slate-200 mb-4"></i>
-                          <h3 className="text-xl font-black text-[#2B3674]">No Personnel Found</h3>
+                        <div className="flex flex-col items-center justify-center flex-1 py-16 text-center bg-[#f8fafc] rounded-2xl border border-dashed border-slate-200">
+                          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-sm mb-5 border border-slate-100">
+                            <i className="fa-solid fa-users-slash text-3xl text-slate-300"></i>
+                          </div>
+                          <h3 className="text-2xl font-black text-[#2B3674] mb-2">No Personnel Found</h3>
+                          <p className="text-slate-500 font-medium">You currently do not have any engineers assigned to your division.</p>
                         </div>
                       ) : (
-                        <table className="w-full text-left border-collapse min-w-[600px]">
-                          <thead>
-                            <tr className="bg-white text-[11px] uppercase text-[#A3AED0] font-extrabold border-b border-slate-100">
-                              <th className="px-6 py-5 tracking-widest">Engineer Name</th>
-                              <th className="px-6 py-5 tracking-widest">Module</th>
-                              <th className="px-6 py-5 text-right tracking-widest">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-sm font-medium">
-                            {teamMembers.map((member) => (
-                              <tr key={member.id} className="border-b border-slate-50 hover:bg-[#F4F7FE]/50 transition-colors">
-                                <td className="px-6 py-4 font-bold text-[#2B3674]">{member.name}</td>
-                                <td className="px-6 py-4 text-[#A3AED0] uppercase text-[10px] font-black tracking-widest">{member.module}</td>
-                                <td className="px-6 py-4 text-right">
-                                  <button onClick={() => handleAssignTaskToMember(member.id, member.name)} className="bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm">
-                                    <i className="fa-solid fa-list-check mr-1"></i> Assign Task
-                                  </button>
-                                </td>
+                        <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                          <table className="w-full text-left border-collapse min-w-[600px]">
+                            <thead>
+                              <tr className="bg-[#f8fafc] text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-100">
+                                <th className="px-6 py-4 tracking-widest">Engineer Name</th>
+                                <th className="px-6 py-4 tracking-widest">Module</th>
+                                <th className="px-6 py-4 text-right tracking-widest">Actions</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="text-sm font-medium">
+                              {teamMembers.map((member) => (
+                                <tr key={member.id} className="border-b border-slate-50 hover:bg-[#f8fafc] transition-colors group">
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm shadow-sm group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                                        {member.name.charAt(0)}
+                                      </div>
+                                      <span className="font-bold text-[#2B3674] group-hover:text-indigo-700 transition-colors">{member.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-widest">{member.module}</span>
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+    <button 
+      onClick={() => handleAssignTaskToMember(member.id, member.name)} 
+      className="bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-600 hover:text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm hover:shadow-md"
+    >
+      <i className="fa-solid fa-list-check mr-1.5"></i> Assign Task
+    </button>
+  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}
