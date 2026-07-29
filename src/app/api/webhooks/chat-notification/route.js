@@ -12,18 +12,26 @@ export async function POST(req) {
 
     // 1. Only process new chat message inserts
     if (type !== "INSERT" || !record) {
-      return NextResponse.json({ message: "Ignored non-INSERT event" }, { status: 200 });
+      return NextResponse.json(
+        { message: "Ignored non-INSERT event" }, 
+        { status: 200, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      );
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const channelName = record.channel;
 
     // 2. Fetch all directory data to determine channel access
-    const { data: profiles } = await supabase.from('profiles').select('id, personal_email, email, full_name, role');
+    const { data: profiles, error: profileErr } = await supabase.from('profiles').select('id, personal_email, email, full_name, role');
     const { data: teams } = await supabase.from('teams').select('id, name, lead_id');
     const { data: teamMembers } = await supabase.from('team_members').select('user_id, team_id');
 
-    if (!profiles) return NextResponse.json({ message: "No profiles found" }, { status: 200 });
+    if (profileErr || !profiles) {
+      return NextResponse.json(
+        { message: "No profiles found or error fetching profiles", error: profileErr }, 
+        { status: 200, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      );
+    }
 
     // 3. Map out which team everyone belongs to
     const dirMap = {};
@@ -43,17 +51,14 @@ export async function POST(req) {
       dirMap[p.id] = { ...p, team_name };
     });
 
-    // 4. Determine exactly who is allowed to receive this alert
+    // 4. Determine exactly who is allowed to receive this alert based on channel permissions
     let eligibleUserIds = [];
 
     if (channelName === "All Teams") {
-      // Global Network: Everyone gets it
       eligibleUserIds = profiles.map(p => p.id);
     } else if (channelName === "Admin") {
-      // Admin Network: Only Admins and Team Leads
       eligibleUserIds = profiles.filter(p => p.role === 'admin' || p.role === 'team_lead').map(p => p.id);
     } else {
-      // Specific Team Network: Only that team's operatives + System Admins
       eligibleUserIds = profiles.filter(p => dirMap[p.id].team_name === channelName || p.role === 'admin').map(p => p.id);
     }
 
@@ -61,14 +66,24 @@ export async function POST(req) {
     eligibleUserIds = eligibleUserIds.filter(id => id !== record.sender_id);
 
     if (eligibleUserIds.length === 0) {
-      return NextResponse.json({ message: "No offline recipients found for this private channel" }, { status: 200 });
+      return NextResponse.json(
+        { message: "No offline recipients found for this private channel" }, 
+        { status: 200, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      );
     }
 
     // 6. Extract their Personal Emails (Fallback to work email)
     const recipientEmails = eligibleUserIds.map(id => {
       const user = dirMap[id];
-      return user.personal_email || user.email;
+      return user?.personal_email || user?.email;
     }).filter(Boolean);
+
+    if (recipientEmails.length === 0) {
+      return NextResponse.json(
+        { message: "No valid email addresses found for recipients" }, 
+        { status: 200, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+      );
+    }
 
     // Get Sender Name for the Email Subject
     const senderProfile = dirMap[record.sender_id];
@@ -84,7 +99,7 @@ export async function POST(req) {
       },
     });
 
-    // 8. Fire the Encrypted Alert
+    // 8. Fire the Alert Email
     const mailOptions = {
       from: `"ZenTech OS" <${process.env.GMAIL_USER}>`,
       to: recipientEmails, 
@@ -103,7 +118,7 @@ export async function POST(req) {
               "${messageContent}"
             </blockquote>
             <p style="margin-top: 24px; text-align: center;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard" 
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://ztiw.vercel.app'}/dashboard" 
                  style="background-color: #4318FF; color: #ffffff; padding: 12px 28px; border-radius: 12px; font-size: 14px; font-weight: 700; text-decoration: none; display: inline-block; box-shadow: 0 4px 14px rgba(67, 24, 255, 0.3);">
                 Access Encrypted Terminal
               </a>
@@ -115,9 +130,21 @@ export async function POST(req) {
 
     const info = await transporter.sendMail(mailOptions);
 
-    return NextResponse.json({ success: true, messageId: info.messageId });
+    return NextResponse.json(
+      { success: true, messageId: info.messageId },
+      { 
+        status: 200, 
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } 
+      }
+    );
   } catch (err) {
     console.error("Webhook processing error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message }, 
+      { 
+        status: 500,
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } 
+      }
+    );
   }
 }
