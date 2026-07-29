@@ -76,7 +76,7 @@ export async function POST(req) {
       },
     });
 
-    await transporter.sendMail({
+    const mailOptions = {
       from: `"ZenTech OS" <${process.env.GMAIL_USER}>`,
       to: recipientEmails,
       subject: `🚨 Priority Ping: #${channelName} | ${senderName}`,
@@ -89,6 +89,18 @@ export async function POST(req) {
           </blockquote>
         </div>
       `,
+    };
+
+    // VERCEL FIX: Must wrap in a Promise so the serverless function doesn't crash or exit early
+    await new Promise((resolve, reject) => {
+      transporter.sendMail(mailOptions, (err, info) => {
+        if (err) {
+          console.error("Nodemailer error:", err);
+          reject(err);
+        } else {
+          resolve(info);
+        }
+      });
     });
 
     return NextResponse.json({ success: true });
