@@ -528,41 +528,95 @@ export default function ZenTechDashboard() {
     }
   }, [chatMessages]);
 
+  // ==============================================================
+  // MODIFIED: DIRECT EMAIL TRIGGER FOR TEXT MESSAGES ADDED HERE
+  // ==============================================================
   const handleSendChatMessage = async () => {
     if (!chatInput.trim()) return;
     setIsSendingChat(true);
-    const { error } = await supabase.from("chats").insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: chatInput.trim() }]);
+
+    // Added .select().single() to return the saved row data instantly
+    const { data: insertedData, error } = await supabase
+      .from("chats")
+      .insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: chatInput.trim() }])
+      .select()
+      .single();
+
     if (!error) { 
       setChatInput(""); 
       setIsUserScrolling(false);
       fetchChatMessages(); 
       fetchChatPreviews(); 
+
+      // 1. TRIGGER NOTIFICATION EMAIL API
+      if (insertedData) {
+        try {
+          await fetch('/api/webhooks/chat-notification', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ record: insertedData })
+          });
+        } catch (err) {
+          console.error("Failed to trigger email notification:", err);
+        }
+      }
     }
     setIsSendingChat(false);
   };
 
+  // ==============================================================
+  // MODIFIED: DIRECT EMAIL TRIGGER FOR MEDIA UPLOADS ADDED HERE
+  // ==============================================================
   const handleChatMediaUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    
     const isImage = file.type.startsWith("image/");
     const isVideo = file.type.startsWith("video/");
+    
     if (!isImage && !isVideo) {
       Swal.fire("Invalid Format", "Only Image and Video files are allowed in chat.", "error");
       if (chatMediaInputRef.current) chatMediaInputRef.current.value = "";
       return;
     }
+    
     setIsSendingChat(true);
     const mediaType = isImage ? "image" : "video";
     const fileName = `${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
     const { error: uploadError } = await supabase.storage.from("chat_media").upload(fileName, file);
-    if (uploadError) { Swal.fire("Upload Failed", uploadError.message, "error"); setIsSendingChat(false); return; }
+    
+    if (uploadError) { 
+      Swal.fire("Upload Failed", uploadError.message, "error"); 
+      setIsSendingChat(false); 
+      return; 
+    }
     
     const { data: publicUrlData } = supabase.storage.from("chat_media").getPublicUrl(fileName);
-    await supabase.from("chats").insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: null, media_url: publicUrlData.publicUrl, media_type: mediaType }]);
+    
+    // Added .select().single() to return the saved row data instantly
+    const { data: insertedMediaData, error: dbError } = await supabase
+      .from("chats")
+      .insert([{ channel: activeChatChannel, sender_id: userProfile.id, message: null, media_url: publicUrlData.publicUrl, media_type: mediaType }])
+      .select()
+      .single();
+      
     if (chatMediaInputRef.current) chatMediaInputRef.current.value = "";
     setIsUserScrolling(false);
     fetchChatMessages();
     fetchChatPreviews();
+    
+    // 2. TRIGGER NOTIFICATION EMAIL API
+    if (!dbError && insertedMediaData) {
+      try {
+        await fetch('/api/webhooks/chat-notification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ record: insertedMediaData })
+        });
+      } catch (err) {
+        console.error("Failed to trigger email notification:", err);
+      }
+    }
     setIsSendingChat(false);
   };
 
