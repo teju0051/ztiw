@@ -89,7 +89,6 @@ export async function POST(req) {
             <!-- Minimalist Enterprise Header -->
             <div style="padding: 32px 32px 0 32px;">
               <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">Zen-Tech Communication</h1>
-              <p style="margin: 4px 0 0 0; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px;">Secure Communications</p>
             </div>
 
             <!-- Body Content -->
