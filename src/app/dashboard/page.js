@@ -54,10 +54,7 @@ const JitsiMeetingRoom = ({ roomName, displayName, avatarUrl, onLeave }) => {
       };
 
       apiRef.current = new window.JitsiMeetExternalAPI(domain, options);
-
-      if (avatarUrl) {
-        apiRef.current.executeCommand("avatarUrl", avatarUrl);
-      }
+      if (avatarUrl) apiRef.current.executeCommand("avatarUrl", avatarUrl);
 
       apiRef.current.addEventListener("videoConferenceLeft", () => {
         if (onLeaveRef.current) onLeaveRef.current();
@@ -156,6 +153,7 @@ export default function ZenTechDashboard() {
     document.documentElement.setAttribute("data-scroll-behavior", "smooth");
 
     if (
+      typeof window !== "undefined" &&
       "Notification" in window &&
       Notification.permission !== "granted" &&
       Notification.permission !== "denied"
@@ -179,19 +177,29 @@ export default function ZenTechDashboard() {
       const savedStickers = localStorage.getItem("zentech_stickers");
       if (savedStickers) setCustomStickers(JSON.parse(savedStickers));
     } catch (e) {
-      console.warn(
-        "Failed to load local stickers due to strict browser settings.",
-      );
+      console.warn("Failed to load local stickers.");
     }
 
     checkUserAndFetchProfile();
   }, []);
 
-  // Heartbeat Polling: Bans, Maintenance, and Deadlines
+  // Global Warn Action Trigger for SweetAlert HTML injections
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.handleWarnTeamLeadGlobal = (leadId, leadName, currentWarnings) => {
+        Swal.close();
+        setTimeout(
+          () => handleWarnTeamLead(leadId, leadName, currentWarnings),
+          300,
+        );
+      };
+    }
+  }, [userProfile]);
+
+  // Heartbeat Polling: Bans, Maintenance, Deadlines & Profile Auto-Refresh
   useEffect(() => {
     if (!userProfile) return;
     const checkStatusInterval = setInterval(async () => {
-      // 1. Check Maintenance
       const { data: sysData } = await supabase
         .from("system_settings")
         .select("*")
@@ -213,10 +221,9 @@ export default function ZenTechDashboard() {
         return;
       }
 
-      // 2. Check Bans
       const { data: profileCheck } = await supabase
         .from("profiles")
-        .select("ban_status, ban_until")
+        .select("ban_status, ban_until, warning_count, warning_reason")
         .eq("id", userProfile.id)
         .single();
       if (profileCheck && profileCheck.ban_status !== "none") {
@@ -224,7 +231,7 @@ export default function ZenTechDashboard() {
           profileCheck.ban_status === "temporary" &&
           new Date() >= new Date(profileCheck.ban_until)
         ) {
-          // Ban expired naturally
+          // Ban expired
         } else {
           clearInterval(checkStatusInterval);
           Swal.fire({
@@ -236,11 +243,24 @@ export default function ZenTechDashboard() {
           }).then(() => handleLogout());
         }
       }
+
+      // Sync local profile warnings
+      if (
+        profileCheck &&
+        (profileCheck.warning_count !== userProfile.warning_count ||
+          profileCheck.warning_reason !== userProfile.warning_reason)
+      ) {
+        setUserProfile((prev) => ({
+          ...prev,
+          warning_count: profileCheck.warning_count,
+          warning_reason: profileCheck.warning_reason,
+        }));
+      }
     }, 10000);
     return () => clearInterval(checkStatusInterval);
   }, [userProfile]);
 
-  // LIVE DEADLINE MONITORING
+  // Live Deadline Monitoring
   useEffect(() => {
     if (userProfile && tasks.length > 0) {
       tasks.forEach((task) => {
@@ -648,7 +668,6 @@ export default function ZenTechDashboard() {
     const { data: channelMeta } = await supabase
       .from("channel_metadata")
       .select("*");
-
     let directMessages = [];
     try {
       const { data } = await supabase
@@ -812,11 +831,11 @@ export default function ZenTechDashboard() {
         (msg) => !(msg.read_by || []).includes(userProfile.id),
       ).length;
 
-      let senderName = "Unknown";
-      let text = "No messages yet";
-      let time = "";
-      let msgId = null;
-      let senderAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.label)}&background=e0e7ff&color=4f46e5`;
+      let senderName = "Unknown",
+        text = "No messages yet",
+        time = "",
+        msgId = null,
+        senderAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.label)}&background=e0e7ff&color=4f46e5`;
 
       if (latest && latest.length > 0) {
         const msg = latest[0];
@@ -885,6 +904,7 @@ export default function ZenTechDashboard() {
       .select(queryCols)
       .eq("channel", activeChatChannel)
       .order("created_at", { ascending: true });
+
     if (res.error) {
       queryCols =
         "id, message, media_url, media_type, created_at, sender_id, read_by, profiles:sender_id(full_name, role, avatar_url)";
@@ -895,17 +915,16 @@ export default function ZenTechDashboard() {
         .order("created_at", { ascending: true });
     }
 
-    const { data, error } = res;
+    if (!res.error && res.data) {
+      setChatMessages(res.data);
+      setPinnedMessage(
+        res.data
+          .slice()
+          .reverse()
+          .find((m) => m.is_pinned) || null,
+      );
 
-    if (!error && data) {
-      setChatMessages(data);
-      const pinned = data
-        .slice()
-        .reverse()
-        .find((m) => m.is_pinned);
-      setPinnedMessage(pinned || null);
-
-      const unreadMessages = data.filter(
+      const unreadMessages = res.data.filter(
         (m) =>
           m.sender_id !== userProfile.id &&
           !(m.read_by || []).includes(userProfile.id),
@@ -948,8 +967,7 @@ export default function ZenTechDashboard() {
   const handleChatScroll = () => {
     if (!chatContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
-    const isAtBottom = scrollHeight - scrollTop <= clientHeight + 50;
-    setIsUserScrolling(!isAtBottom);
+    setIsUserScrolling(scrollHeight - scrollTop > clientHeight + 50);
   };
 
   useEffect(() => {
@@ -968,10 +986,8 @@ export default function ZenTechDashboard() {
     const items = e.clipboardData?.items;
     if (!items) return;
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const blob = items[i].getAsFile();
-        setPastedImage(blob);
-      }
+      if (items[i].type.indexOf("image") !== -1)
+        setPastedImage(items[i].getAsFile());
     }
   };
 
@@ -1030,27 +1046,25 @@ export default function ZenTechDashboard() {
   const renderMessageText = (text) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+)/g;
-    const parts = text.split(urlRegex);
-    return parts.map((part, i) => {
-      if (part.match(/^https?:\/\//)) {
+    return text.split(urlRegex).map((part, i) => {
+      if (part.match(/^https?:\/\//))
         return (
           <a
             key={i}
             href={part}
             onClick={(e) => handleLinkWarning(e, part)}
-            className="text-indigo-500 font-bold hover:underline transition-all cursor-pointer break-all"
+            className="text-indigo-500 font-bold hover:underline break-all"
           >
             {part}
           </a>
         );
-      }
       return <span key={i}>{part}</span>;
     });
   };
 
   const handlePinMessage = async (msgId, currentPinState) => {
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("chats")
         .update({ is_pinned: !currentPinState })
         .eq("id", msgId)
@@ -1079,10 +1093,9 @@ export default function ZenTechDashboard() {
           .from("chat_media")
           .upload(fileName, pastedImage);
         if (!uploadError) {
-          const { data } = supabase.storage
+          finalMediaUrl = supabase.storage
             .from("chat_media")
-            .getPublicUrl(fileName);
-          finalMediaUrl = data.publicUrl;
+            .getPublicUrl(fileName).data.publicUrl;
           finalMediaType = "image";
         } else {
           Swal.fire("Image Upload Failed", uploadError.message, "error");
@@ -1092,7 +1105,7 @@ export default function ZenTechDashboard() {
       }
 
       if (editingMessage) {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("chats")
           .update({
             message: chatInput.trim(),
@@ -1110,7 +1123,6 @@ export default function ZenTechDashboard() {
           media_url: finalMediaUrl,
           media_type: finalMediaType,
         };
-
         if (replyingToMessage) payload.reply_to = String(replyingToMessage.id);
         const { data: insertedData, error } = await supabase
           .from("chats")
@@ -1145,8 +1157,8 @@ export default function ZenTechDashboard() {
   const handleChatMediaUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    const isImage = file.type.startsWith("image/");
-    const isVideo = file.type.startsWith("video/");
+    const isImage = file.type.startsWith("image/"),
+      isVideo = file.type.startsWith("video/");
     if (!isImage && !isVideo) {
       Swal.fire(
         "Invalid Format",
@@ -1171,9 +1183,9 @@ export default function ZenTechDashboard() {
         return;
       }
 
-      const { data: publicUrlData } = supabase.storage
+      const publicUrl = supabase.storage
         .from("chat_media")
-        .getPublicUrl(fileName);
+        .getPublicUrl(fileName).data.publicUrl;
       const { data: insertedMediaData, error: dbError } = await supabase
         .from("chats")
         .insert([
@@ -1181,7 +1193,7 @@ export default function ZenTechDashboard() {
             channel: activeChatChannel,
             sender_id: userProfile.id,
             message: null,
-            media_url: publicUrlData.publicUrl,
+            media_url: publicUrl,
             media_type: mediaType,
           },
         ])
@@ -1229,21 +1241,17 @@ export default function ZenTechDashboard() {
       .map((id) => {
         const user = globalDirectory[id];
         if (!user) return "";
-        let roleBadge = "";
-        if (user.role === "admin") roleBadge = "👑 Admin";
-        else if (user.role === "team_lead")
-          roleBadge = `✅ Lead - ${user.team_name || "Unassigned"}`;
-        else roleBadge = `🛠️ ${user.team_name || "AI Engineer"}`;
-
+        let roleBadge =
+          user.role === "admin"
+            ? "👑 Admin"
+            : user.role === "team_lead"
+              ? `✅ Lead - ${user.team_name || "Unassigned"}`
+              : `🛠️ ${user.team_name || "AI Engineer"}`;
         return `
          <div class="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
             <img src="${user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=f3f4f6&color=64748b`}" class="w-10 h-10 rounded-full object-cover border border-slate-200" />
-            <div class="flex flex-col text-left">
-               <span class="text-sm font-bold text-slate-900">${user.full_name}</span>
-               <span class="text-[0.65rem] font-bold text-indigo-500 uppercase tracking-widest">${roleBadge}</span>
-            </div>
-         </div>
-       `;
+            <div class="flex flex-col text-left"><span class="text-sm font-bold text-slate-900">${user.full_name}</span><span class="text-[0.65rem] font-bold text-indigo-500 uppercase tracking-widest">${roleBadge}</span></div>
+         </div>`;
       })
       .join("");
 
@@ -1279,16 +1287,13 @@ export default function ZenTechDashboard() {
       didOpen: () => Swal.showLoading(),
       background: "#ffffff",
     });
-
     const { data: staffTasks, error } = await supabase
       .from("tasks")
       .select("title, status, created_at, deadline")
       .eq("assigned_to", staffId)
       .order("created_at", { ascending: false })
-      .limit(10); // Standard approach without ranges
-
+      .range(0, 9);
     if (error) {
-      console.error("Supabase Error:", error);
       Swal.fire(
         "Database Error",
         "The 'deadline' column is missing from your tasks table. Please add it via the Supabase dashboard.",
@@ -1297,52 +1302,48 @@ export default function ZenTechDashboard() {
       return;
     }
 
-    if (!error) {
-      let taskHtml = `<div style="text-align: left; max-height: 350px; overflow-y: auto;" class="custom-scrollbar pr-2">`;
-      if (!staffTasks || staffTasks.length === 0)
-        taskHtml += `<div style="text-align: center; padding: 20px; color: #64748b; font-size: 13px; font-weight: 600;">No active or completed tasks assigned to this operative.</div>`;
-      else {
-        taskHtml += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
-        staffTasks.forEach((t) => {
-          let bg = "#fef3c7",
-            col = "#a16207";
-          if (t.status === "completed" || t.status === "approved") {
-            bg = "#dcfce7";
-            col = "#15803d";
-          } else if (t.status === "rejected") {
-            bg = "#fee2e2";
-            col = "#b91c1c";
-          } else if (
-            t.status === "pending_completion_approval" ||
-            t.status === "pending_approval"
-          ) {
-            bg = "#f3e8ff";
-            col = "#7e22ce";
-          }
+    let taskHtml = `<div style="text-align: left; max-height: 350px; overflow-y: auto;" class="custom-scrollbar pr-2">`;
+    if (!staffTasks || staffTasks.length === 0)
+      taskHtml += `<div style="text-align: center; padding: 20px; color: #64748b; font-size: 13px; font-weight: 600;">No active or completed tasks assigned to this operative.</div>`;
+    else {
+      taskHtml += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+      staffTasks.forEach((t) => {
+        let bg = "#fef3c7",
+          col = "#a16207";
+        if (t.status === "completed" || t.status === "approved") {
+          bg = "#dcfce7";
+          col = "#15803d";
+        } else if (t.status === "rejected") {
+          bg = "#fee2e2";
+          col = "#b91c1c";
+        } else if (
+          t.status === "pending_completion_approval" ||
+          t.status === "pending_approval"
+        ) {
+          bg = "#f3e8ff";
+          col = "#7e22ce";
+        }
 
-          taskHtml += `
-            <div style="padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <p style="font-weight: 700; font-size: 14px; color: #0f172a; margin: 0 0 6px 0;">${t.title}</p>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="padding: 4px 8px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; background: ${bg}; color: ${col};">${t.status.replace(/_/g, " ")}</span>
-                <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">Due: ${t.deadline ? new Date(t.deadline).toLocaleDateString() : "None"}</span>
-              </div>
+        taskHtml += `
+          <div style="padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+            <p style="font-weight: 700; font-size: 14px; color: #0f172a; margin: 0 0 6px 0;">${t.title}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="padding: 4px 8px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; background: ${bg}; color: ${col};">${t.status.replace(/_/g, " ")}</span>
+              <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">Due: ${t.deadline ? new Date(t.deadline).toLocaleDateString() : "None"}</span>
             </div>
-          `;
-        });
-        taskHtml += `</div>`;
-      }
-      taskHtml += `</div>`;
-
-      Swal.fire({
-        title: `<div style="font-size: 20px; font-weight: 900; color: #0f172a;">${staffName}</div><div style="font-size: 12px; color: #64748b; font-family: monospace; margin-top: 4px;">ID: ${ztId}</div>`,
-        html: taskHtml,
-        confirmButtonText: "Close Window",
-        confirmButtonColor: "#4f46e5",
-        width: "500px",
-        background: "#f8fafc",
+          </div>`;
       });
+      taskHtml += `</div>`;
     }
+    taskHtml += `</div>`;
+    Swal.fire({
+      title: `<div style="font-size: 20px; font-weight: 900; color: #0f172a;">${staffName}</div><div style="font-size: 12px; color: #64748b; font-family: monospace; margin-top: 4px;">ID: ${ztId}</div>`,
+      html: taskHtml,
+      confirmButtonText: "Close Window",
+      confirmButtonColor: "#4f46e5",
+      width: "500px",
+      background: "#f8fafc",
+    });
   };
 
   const handleBanStaff = async (staff) => {
@@ -1408,8 +1409,7 @@ export default function ZenTechDashboard() {
           <label style="display: block; margin-bottom: 8px;"><input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? "disabled" : "checked"}> <span style="${isTempDisabled ? "text-decoration: line-through; color: #94a3b8;" : ""}">Temporary Ban (24 Hours)</span></label>
           <label style="display: block; margin-bottom: 15px;"><input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? "checked" : ""}> <strong style="color: #b91c1c;">Permanent Ban</strong> ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ""}</label>
           <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;"></textarea>
-        </div>
-      `,
+        </div>`,
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: "Enforce Ban",
@@ -1417,9 +1417,9 @@ export default function ZenTechDashboard() {
       background: "#ffffff",
       preConfirm: () => {
         const type = document.getElementById("tempBan").checked
-          ? "temporary"
-          : "permanent";
-        const reason = document.getElementById("banReason").value;
+            ? "temporary"
+            : "permanent",
+          reason = document.getElementById("banReason").value;
         if (!reason)
           Swal.showValidationMessage("A reason for the ban is required.");
         return { type, reason };
@@ -1460,6 +1460,68 @@ export default function ZenTechDashboard() {
     }
   };
 
+  const handleWarnTeamLead = async (leadId, leadName, currentWarnings) => {
+    const { value: reason } = await Swal.fire({
+      title: `Issue Warning to ${leadName}`,
+      html: `
+        <div style="text-align: left;">
+           <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Current Warnings: <strong style="color: #e11d48;">${currentWarnings}/3</strong></p>
+           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px;">Warning Reason</label>
+           <textarea id="warning-reason" class="swal2-textarea" placeholder="Detail the exact reason for this official warning..." style="width: 100%; height: 100px; margin: 5px 0 0 0; font-size: 14px; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;"></textarea>
+        </div>`,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText:
+        '<i class="fa-solid fa-gavel mr-1"></i> Issue Official Warning',
+      confirmButtonColor: "#e11d48",
+      background: "#ffffff",
+      preConfirm: () => {
+        const reasonVal = document.getElementById("warning-reason").value;
+        if (!reasonVal)
+          Swal.showValidationMessage(
+            "A reason is required to issue a warning.",
+          );
+        return reasonVal;
+      },
+    });
+
+    if (reason) {
+      const newCount = (currentWarnings || 0) + 1;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ warning_count: newCount, warning_reason: reason })
+        .eq("id", leadId);
+      if (error)
+        Swal.fire(
+          "Database Error",
+          "Please ensure 'warning_count' (int) and 'warning_reason' (text) columns exist in the profiles table.",
+          "error",
+        );
+      else {
+        await supabase.from("notifications").insert([
+          {
+            user_id: leadId,
+            message: `🚨 OFFICIAL WARNING ISSUED: ${reason}`,
+          },
+        ]);
+        await supabase.from("activity_logs").insert([
+          {
+            actor_name: userProfile.full_name,
+            actor_role: userProfile.role,
+            action_description: `Issued Warning #${newCount} to Team Lead ${leadName}`,
+          },
+        ]);
+        Swal.fire(
+          "Warning Issued",
+          `${leadName} has been officially warned. (Total: ${newCount})`,
+          "success",
+        );
+        fetchAllTeamsWithMembers();
+        checkUserAndFetchProfile();
+      }
+    }
+  };
+
   const fetchNotifications = async (userId) => {
     const { data, error } = await supabase
       .from("notifications")
@@ -1469,7 +1531,7 @@ export default function ZenTechDashboard() {
       .order("created_at", { ascending: false });
     if (!error && data && data.length > 0) {
       Swal.fire({
-        title: "⚠️ New Task Assigned",
+        title: "⚠️ New Notification",
         html: `<div style="text-align: left; background: #f8fafc; padding: 16px; border-radius: 8px; border-left: 4px solid #4f46e5; font-weight: 600; color: #334155;">${data[0].message}</div>`,
         icon: "info",
         confirmButtonText: "Acknowledge",
@@ -1505,7 +1567,7 @@ export default function ZenTechDashboard() {
     const { data: teamsData, error } = await supabase
       .from("teams")
       .select(
-        `id, name, profiles:lead_id ( id, full_name, role ), team_members ( user_id, profiles:user_id ( full_name, role ) )`,
+        `id, name, profiles:lead_id ( id, full_name, role, warning_count, warning_reason ), team_members ( user_id, profiles:user_id ( full_name, role ) )`,
       );
     if (!error && teamsData) setAllTeamsData(teamsData);
   };
@@ -1579,19 +1641,17 @@ export default function ZenTechDashboard() {
               `${memberName} has been deployed.`,
               "success",
             );
-          } else {
+          } else
             Swal.fire(
               "Error",
               "Assignment blocked. Check database permissions.",
               "error",
             );
-          }
         }
       }
     });
   };
 
-  // MODIFIED: Added Deadline support to Assign Task
   const handleAssignTaskToMember = async (memberId, memberName) => {
     Swal.fire({
       title: "Retrieving Operative Data...",
@@ -1604,22 +1664,19 @@ export default function ZenTechDashboard() {
       .select("title, status, created_at, deadline")
       .eq("assigned_to", memberId)
       .order("created_at", { ascending: false })
-      .limit(6);
+      .range(0, 5);
 
-    if (fetchError) {
-      console.error("Supabase Error:", fetchError);
-      Swal.fire(
+    if (fetchError)
+      return Swal.fire(
         "Database Error",
         "The 'deadline' column is missing from your tasks table. Please add it via the Supabase dashboard.",
         "error",
       );
-      return;
-    }
 
     let workloadHtml = "";
-    if (!previousTasks || previousTasks.length === 0) {
+    if (!previousTasks || previousTasks.length === 0)
       workloadHtml = `<div style="text-align: center; padding: 60px 20px; color: #94a3b8;"><i class="fa-solid fa-clipboard-check" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><div style="font-size: 14px; font-weight: 700;">No previous assignments found.</div><div style="font-size: 12px; font-weight: 500; margin-top: 4px;">Operative is fully available.</div></div>`;
-    } else {
+    else {
       workloadHtml = `<div style="display: flex; flex-direction: column; gap: 12px; max-height: 380px; overflow-y: auto; padding-right: 6px;" class="custom-scrollbar">`;
       previousTasks.forEach((t) => {
         let bg = "#fef3c7",
@@ -1640,7 +1697,6 @@ export default function ZenTechDashboard() {
           bg = "#e0e7ff";
           col = "#4f46e5";
         }
-
         workloadHtml += `<div style="padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;"><p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #1e293b; line-height: 1.4; text-align: left;">${t.title.replace(/\[.*?\]\s*/, "")}</p><div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 10px; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i>${new Date(t.created_at).toLocaleDateString()}</span><span style="background: ${bg}; color: ${col}; padding: 4px 10px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${t.status.replace(/_/g, " ")}</span></div></div>`;
       });
       workloadHtml += `</div>`;
@@ -1689,9 +1745,9 @@ export default function ZenTechDashboard() {
       confirmButtonColor: "#4f46e5",
       cancelButtonColor: "#94a3b8",
       preConfirm: () => {
-        const desc = document.getElementById("task-desc").value;
-        const priority = document.getElementById("task-priority").value;
-        const deadline = document.getElementById("task-deadline").value;
+        const desc = document.getElementById("task-desc").value,
+          priority = document.getElementById("task-priority").value,
+          deadline = document.getElementById("task-deadline").value;
         if (!desc.trim()) {
           Swal.showValidationMessage(
             "A detailed task description is required.",
@@ -1712,17 +1768,14 @@ export default function ZenTechDashboard() {
         });
 
         let assignedTeamId = teamId;
-
-        // Locate correct division if Admin is assigning
         if (userProfile.role === "admin") {
           const { data: leadTeam } = await supabase
             .from("teams")
             .select("id")
             .eq("lead_id", memberId)
             .single();
-          if (leadTeam) {
-            assignedTeamId = leadTeam.id;
-          } else {
+          if (leadTeam) assignedTeamId = leadTeam.id;
+          else {
             const { data: engTeam } = await supabase
               .from("team_members")
               .select("team_id")
@@ -1742,7 +1795,6 @@ export default function ZenTechDashboard() {
             deadline: deadline,
           },
         ]);
-
         if (!taskError) {
           await supabase.from("notifications").insert([
             {
@@ -1776,7 +1828,6 @@ export default function ZenTechDashboard() {
     });
   };
 
-  // MODIFIED: Added Deadline support to Admin Directives
   const handleAdminDispatchDirective = async () => {
     const { value: formValues } = await Swal.fire({
       title: "Announcement",
@@ -1805,10 +1856,10 @@ export default function ZenTechDashboard() {
       confirmButtonColor: "#f59e0b",
       background: "#ffffff",
       preConfirm: () => {
-        const title = document.getElementById("dir-title").value;
-        const team = document.getElementById("dir-team").value;
-        const deadline = document.getElementById("dir-deadline").value;
-        const file = document.getElementById("dir-file").files[0];
+        const title = document.getElementById("dir-title").value,
+          team = document.getElementById("dir-team").value,
+          deadline = document.getElementById("dir-deadline").value,
+          file = document.getElementById("dir-file").files[0];
         if (!title) Swal.showValidationMessage("Title is required");
         return { title, team, deadline: deadline || null, file };
       },
@@ -1836,10 +1887,9 @@ export default function ZenTechDashboard() {
           .upload(fileName, formValues.file);
         if (uploadError)
           return Swal.fire("Upload Failed", uploadError.message, "error");
-        const { data: publicUrlData } = supabase.storage
+        uploadedFileUrl = supabase.storage
           .from("task_docs")
-          .getPublicUrl(fileName);
-        uploadedFileUrl = publicUrlData.publicUrl;
+          .getPublicUrl(fileName).data.publicUrl;
       }
 
       const { error: taskError } = await supabase.from("tasks").insert([
@@ -1854,7 +1904,6 @@ export default function ZenTechDashboard() {
           deadline: formValues.deadline,
         },
       ]);
-
       if (!taskError) {
         await supabase.from("notifications").insert([
           {
@@ -1879,7 +1928,6 @@ export default function ZenTechDashboard() {
     }
   };
 
-  // MODIFIED: Edit Task allows Admin & Team Lead to change Title, Status, and Deadline
   const handleEditTask = async (task) => {
     const { value: formValues } = await Swal.fire({
       title: "Modify Assigned Task",
@@ -1887,10 +1935,8 @@ export default function ZenTechDashboard() {
         <div style="text-align: left;">
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Directive Information</label>
            <input id="edit-task-title" class="swal2-input" value="${task.title}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
-           
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Task Deadline</label>
            <input type="datetime-local" id="edit-task-deadline" class="swal2-input" value="${task.deadline ? task.deadline.slice(0, 16) : ""}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
-
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Status</label>
            <select id="edit-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 0 0; font-size: 14px;">
              <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In Progress</option>
@@ -1905,9 +1951,9 @@ export default function ZenTechDashboard() {
       confirmButtonText: "Update Record",
       confirmButtonColor: "#4f46e5",
       preConfirm: () => {
-        const title = document.getElementById("edit-task-title").value;
-        const deadline = document.getElementById("edit-task-deadline").value;
-        const status = document.getElementById("edit-task-status").value;
+        const title = document.getElementById("edit-task-title").value,
+          deadline = document.getElementById("edit-task-deadline").value,
+          status = document.getElementById("edit-task-status").value;
         if (!title) Swal.showValidationMessage("Title is required");
         return { title, deadline: deadline || null, status };
       },
@@ -1930,7 +1976,6 @@ export default function ZenTechDashboard() {
     }
   };
 
-  // NEW: Restricted Task Update for AI Engineers (Only Status)
   const handleEngineerUpdateProgress = async (task) => {
     const { value: formValues } = await Swal.fire({
       title: "Update Task Progress",
@@ -2002,24 +2047,18 @@ export default function ZenTechDashboard() {
         "id, title, status, team_id, is_admin_directive, file_url, assigned_to, assigned_by_name, admin_feedback, deadline, teams(name), profiles:assigned_to(full_name)",
       )
       .order("created_at", { ascending: false });
-
     if (userProfile.role === "team_lead" && teamId)
       query = query.eq("team_id", teamId);
     else if (userProfile.role === "ai_engineer")
       query = query.eq("assigned_to", userProfile.id);
 
     const { data, error } = await query;
-    if (error) {
-      console.error("Fetch Tasks Error:", error);
-    }
-
     if (!error && data) {
       const formattedTasks = data.map((task) => {
         const assignedProf = Array.isArray(task.profiles)
           ? task.profiles[0]
           : task.profiles;
         const teamData = Array.isArray(task.teams) ? task.teams[0] : task.teams;
-
         return {
           id: task.id,
           title: task.title,
@@ -2084,22 +2123,20 @@ export default function ZenTechDashboard() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    const { data: publicUrlData } = supabase.storage
-      .from("reports")
-      .getPublicUrl(fileName);
+    const publicUrl = supabase.storage.from("reports").getPublicUrl(fileName)
+      .data.publicUrl;
     const { error: dbError } = await supabase.from("team_reports").insert([
       {
         team_id: teamId,
         lead_id: userProfile.id,
         file_name: file.name,
-        file_url: publicUrlData.publicUrl,
+        file_url: publicUrl,
         status: "pending_approval",
       },
     ]);
 
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
-
     if (!dbError) {
       await supabase.from("activity_logs").insert([
         {
@@ -2218,7 +2255,13 @@ export default function ZenTechDashboard() {
       userProfile.role === "admin"
     )
       fetchActivityLogs();
-    if (userProfile && activeTab === "team" && userProfile.role === "admin") {
+    if (
+      userProfile &&
+      (activeTab === "team" ||
+        activeTab === "dashboard" ||
+        activeTab === "departments") &&
+      userProfile.role === "admin"
+    ) {
       fetchAdminTeamsAndUnassigned();
       fetchAllTeamsWithMembers();
     }
@@ -2322,6 +2365,67 @@ export default function ZenTechDashboard() {
     activeChatChannel === "Admin" ||
     activeChObj?.isDirect;
 
+  // Open Admin Warn Panel (SweetAlert)
+  const openAdminWarningsModal = () => {
+    const rows = allTeamsData
+      .map((team) => {
+        const lead = Array.isArray(team.profiles)
+          ? team.profiles[0]
+          : team.profiles;
+        if (!lead) return "";
+        const warnings = lead.warning_count || 0;
+        return `
+        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 p-4 rounded-xl mb-3 shadow-sm hover:shadow-md transition-all group">
+           <div class="flex items-center gap-4">
+             <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shadow-inner">${lead.full_name.charAt(0)}</div>
+             <div class="text-left">
+               <span class="font-black text-slate-900 block text-sm group-hover:text-indigo-600 transition-colors">${lead.full_name}</span>
+               <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">${team.name}</span>
+             </div>
+           </div>
+           <div class="flex items-center gap-4">
+             <div class="text-right">
+               <span class="block text-[9px] uppercase tracking-widest font-black text-slate-400">Warnings</span>
+               <span class="text-xs font-black ${warnings > 0 ? "text-rose-600" : "text-emerald-600"}">${warnings} / 3</span>
+             </div>
+             <button onclick="window.handleWarnTeamLeadGlobal('${lead.id}', '${lead.full_name}', ${warnings})" class="bg-white text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-sm border border-rose-200 hover:border-rose-300 flex items-center gap-1">
+               <i class="fa-solid fa-triangle-exclamation"></i> Warn
+             </button>
+           </div>
+        </div>`;
+      })
+      .join("");
+
+    Swal.fire({
+      title: "WARNING Overview",
+      html: `<div class="mt-4 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">${rows || '<p class="text-sm text-slate-500 font-bold">No Team Leads Found.</p>'}</div>`,
+      showConfirmButton: false,
+      showCloseButton: true,
+      width: "600px",
+      background: "#ffffff",
+    });
+  };
+
+  // Open Lead Warning Details (SweetAlert)
+  const openLeadWarningModal = () => {
+    if (userProfile.warning_count > 0) {
+      Swal.fire({
+        title: "Official Warning",
+        html: `<div style="text-align: left; background: #fff1f2; padding: 20px; border-radius: 12px; border: 1px solid #fecdd3; color: #9f1239; font-weight: 500; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);"><strong style="display: block; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #e11d48;">Reason Logged:</strong>${userProfile.warning_reason}</div>`,
+        icon: "warning",
+        confirmButtonColor: "#e11d48",
+        confirmButtonText: "Acknowledge",
+        background: "#ffffff",
+      });
+    } else
+      Swal.fire({
+        title: "Good Standing",
+        text: "You currently have no warnings.",
+        icon: "success",
+        confirmButtonColor: "#10b981",
+      });
+  };
+
   return (
     <>
       <style
@@ -2361,7 +2465,7 @@ export default function ZenTechDashboard() {
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
               </span>
               <span className="font-bold text-lg tracking-wide flex items-center gap-2">
-                <i className="fa-solid fa-shield-halved text-emerald-400"></i>
+                <i className="fa-solid fa-shield-halved text-emerald-400"></i>{" "}
                 Encrypted Feed:{" "}
                 <span className="font-mono text-slate-300 ml-1">
                   {activeMeetingRoom}
@@ -2503,7 +2607,6 @@ export default function ZenTechDashboard() {
               </div>
             </div>
           </div>
-
           <div className="p-6">
             <button
               onClick={handleLogout}
@@ -2517,10 +2620,9 @@ export default function ZenTechDashboard() {
           </div>
         </aside>
 
-        <main className="flex-1 flex flex-col h-screen overflow-hidden w-full bg-slate-50 relative">
+        <main className="flex-1 flex flex-col h-screen overflow-hidden w-full relative bg-slate-50">
           <header className="h-[72px] bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 z-30 shrink-0">
             <div className="flex items-center gap-4"></div>
-
             <div className="flex items-center gap-6">
               {userProfile.role === "admin" && (
                 <button
@@ -2533,7 +2635,6 @@ export default function ZenTechDashboard() {
                     : "System Controls"}
                 </button>
               )}
-
               <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm cursor-default">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -2543,9 +2644,7 @@ export default function ZenTechDashboard() {
                   System Live
                 </span>
               </div>
-
               <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
-
               <div
                 className="flex items-center gap-3 cursor-pointer group transition-all"
                 onClick={() => avatarInputRef.current.click()}
@@ -2583,11 +2682,605 @@ export default function ZenTechDashboard() {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-8 w-full custom-scrollbar relative">
-            <div className="w-full h-full">
+          {/* DYNAMIC CONTENT AREA */}
+          {activeTab === "chat" ? (
+            /* EXACT HEIGHT STRICT BOUNDS FOR CHAT */
+            <div className="flex-1 flex gap-4 lg:gap-6 p-4 sm:p-6 lg:p-8 min-h-0 w-full overflow-hidden animate-in fade-in duration-500">
+              {/* 1-1 Chat Search Modal */}
+              {showNewChatModal && (
+                <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-white rounded-[24px] shadow-xl w-full max-w-md flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                      <h3 className="font-black text-slate-900">
+                        Start Direct Message
+                      </h3>
+                      <button
+                        onClick={() => setShowNewChatModal(false)}
+                        className="text-slate-400 hover:text-rose-500"
+                      >
+                        <i className="fa-solid fa-xmark text-xl"></i>
+                      </button>
+                    </div>
+                    <div className="p-4 border-b border-slate-100 relative">
+                      <i className="fa-solid fa-search absolute left-7 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                      <input
+                        type="text"
+                        placeholder="Search Staff ID or Name..."
+                        value={chatSearchQuery}
+                        onChange={(e) => setChatSearchQuery(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-indigo-400 transition-colors"
+                      />
+                    </div>
+                    <div className="overflow-y-auto max-h-[300px] p-2 custom-scrollbar">
+                      {allUsersList.filter(
+                        (s) =>
+                          s.id !== userProfile.id &&
+                          (s.full_name
+                            .toLowerCase()
+                            .includes(chatSearchQuery.toLowerCase()) ||
+                            s.staff_id
+                              .toLowerCase()
+                              .includes(chatSearchQuery.toLowerCase())),
+                      ).length === 0 ? (
+                        <p className="text-slate-400 text-center py-4 text-sm font-bold">
+                          No staff found.
+                        </p>
+                      ) : (
+                        allUsersList
+                          .filter(
+                            (s) =>
+                              s.id !== userProfile.id &&
+                              (s.full_name
+                                .toLowerCase()
+                                .includes(chatSearchQuery.toLowerCase()) ||
+                                s.staff_id
+                                  .toLowerCase()
+                                  .includes(chatSearchQuery.toLowerCase())),
+                          )
+                          .map((staff) => (
+                            <div
+                              key={staff.id}
+                              onClick={() => handleStartDirectMessage(staff.id)}
+                              className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer rounded-xl transition-colors border border-transparent hover:border-slate-200"
+                            >
+                              <img
+                                src={
+                                  staff.avatar_url ||
+                                  `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.full_name)}&background=f3f4f6&color=64748b`
+                                }
+                                className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                              />
+                              <div>
+                                <p className="font-bold text-slate-900 text-sm">
+                                  {staff.full_name}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">
+                                  {staff.staff_id} •{" "}
+                                  {staff.role.replace("_", " ")}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="w-[320px] h-full bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden shrink-0">
+                <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                  <h2 className="font-black text-slate-900 text-xl tracking-tight">
+                    Messages
+                  </h2>
+                  <button
+                    onClick={() => setShowNewChatModal(true)}
+                    title="New 1-1 Chat"
+                    className="w-8 h-8 rounded-xl bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 flex items-center justify-center transition-all border border-slate-200 shadow-sm"
+                  >
+                    <i className="fa-solid fa-pen-to-square text-sm"></i>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar bg-white">
+                  {availableChannels.map((ch) => {
+                    const preview = channelPreviews[ch.id];
+                    return (
+                      <button
+                        key={ch.id}
+                        onClick={() => setActiveChatChannel(ch.id)}
+                        className={`w-full text-left px-4 py-4 rounded-[20px] transition-all duration-200 flex items-center gap-4 ${activeChatChannel === ch.id ? "bg-indigo-50 shadow-sm border border-indigo-100" : "border border-transparent hover:bg-slate-50"}`}
+                      >
+                        <div className="relative shrink-0">
+                          <img
+                            src={ch.avatar_url}
+                            alt="Group"
+                            className="w-12 h-12 rounded-full object-cover bg-slate-100 border border-slate-200 shadow-sm"
+                          />
+                        </div>
+                        <div className="flex flex-col overflow-hidden w-full">
+                          <div className="flex justify-between items-center w-full">
+                            <span className="font-extrabold text-slate-900 text-sm truncate">
+                              {ch.label}
+                            </span>
+                            {preview?.time && (
+                              <span
+                                className={`text-[10px] whitespace-nowrap ${preview.count > 0 && activeChatChannel !== ch.id ? "text-indigo-600 font-black" : "text-slate-400 font-bold"}`}
+                              >
+                                {preview.time}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center w-full mt-1">
+                            <span className="text-xs text-slate-500 truncate pr-2 font-medium">
+                              {preview ? (
+                                <span className="font-bold text-slate-700">
+                                  {preview.sender}:{" "}
+                                </span>
+                              ) : (
+                                ""
+                              )}
+                              {preview ? preview.text : "No messages yet"}
+                            </span>
+                            {preview?.count > 0 &&
+                              activeChatChannel !== ch.id && (
+                                <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center shadow-sm">
+                                  {preview.count}
+                                </span>
+                              )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex-1 h-full bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center relative z-20 shadow-sm">
+                  {activeChObj && (
+                    <div
+                      className="flex items-center gap-4 cursor-pointer hover:bg-white p-2 rounded-2xl transition-colors w-full"
+                      onClick={showGroupInfo}
+                      title="View Group Info"
+                    >
+                      <div className="relative group">
+                        <img
+                          src={activeChObj.avatar_url}
+                          alt="Group Avatar"
+                          className="w-12 h-12 rounded-full object-cover border border-slate-300 shadow-sm"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-black text-slate-900 text-lg truncate">
+                          {activeChObj.label}
+                        </h3>
+                        <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest truncate mt-0.5">
+                          {activeChObj.isDirect
+                            ? "Direct Message"
+                            : activeChObj.memberIds
+                                .map(
+                                  (id) =>
+                                    globalDirectory[id]?.full_name?.split(
+                                      " ",
+                                    )[0],
+                                )
+                                .filter(Boolean)
+                                .join(", ")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {pinnedMessage && (
+                  <div
+                    onClick={() => scrollToMessage(pinnedMessage.id)}
+                    className="bg-indigo-50 border-b border-indigo-100 px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors z-10 shadow-sm animate-in slide-in-from-top-2"
+                  >
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center shrink-0">
+                        <i className="fa-solid fa-thumbtack text-indigo-500 text-sm"></i>
+                      </div>
+                      <div className="flex flex-col truncate">
+                        <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
+                          Pinned Message
+                        </span>
+                        <span className="text-xs text-slate-700 font-medium truncate w-[300px] sm:w-[500px]">
+                          {pinnedMessage.message || "Media Attachment..."}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePinMessage(pinnedMessage.id, true);
+                      }}
+                      className="text-indigo-300 hover:text-rose-500 p-2 rounded-lg hover:bg-white transition-colors shrink-0"
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
+                )}
+
+                <div
+                  ref={chatContainerRef}
+                  onScroll={handleChatScroll}
+                  className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 custom-scrollbar"
+                >
+                  {chatMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                      <i className="fa-regular fa-comments text-6xl mb-4 text-slate-200"></i>
+                      <p className="text-sm font-bold">
+                        No messages yet. Start the conversation!
+                      </p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg) => {
+                      const isMe = msg.sender_id === userProfile.id;
+                      const isEditable =
+                        isMe &&
+                        new Date() - new Date(msg.created_at) <
+                          2 * 60 * 60 * 1000;
+                      const senderInfo = globalDirectory[msg.sender_id] || {};
+                      const senderTeam = senderInfo.team_name || "Unassigned";
+                      const repliedMsg = msg.reply_to
+                        ? chatMessages.find((m) => m.id === msg.reply_to)
+                        : null;
+
+                      const readByNames = (msg.read_by || [])
+                        .filter((id) => id !== msg.sender_id)
+                        .map(
+                          (id) => globalDirectory[id]?.full_name?.split(" ")[0],
+                        )
+                        .filter(Boolean);
+                      const readByText =
+                        readByNames.length > 0
+                          ? `Seen by ${readByNames.join(", ")}`
+                          : "";
+
+                      return (
+                        <div
+                          key={msg.id}
+                          id={`msg-${msg.id}`}
+                          className={`flex flex-col w-full ${isMe ? "items-end" : "items-start"} mb-6`}
+                        >
+                          <div
+                            className={`flex items-center gap-1 mb-1 ${isMe ? "justify-end mr-12" : "justify-start ml-12"} bg-white border border-slate-200 rounded-md shadow-sm px-1 py-0.5`}
+                          >
+                            <button
+                              onClick={() => setReplyingToMessage(msg)}
+                              className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
+                              title="Reply"
+                            >
+                              <i className="fa-solid fa-reply text-[10px]"></i>
+                            </button>
+                            <button
+                              onClick={() =>
+                                handlePinMessage(msg.id, msg.is_pinned)
+                              }
+                              className={`w-6 h-6 rounded hover:bg-slate-100 flex items-center justify-center transition-colors ${msg.is_pinned ? "text-indigo-600 bg-indigo-50" : "text-slate-500"}`}
+                              title={msg.is_pinned ? "Unpin" : "Pin Message"}
+                            >
+                              <i className="fa-solid fa-thumbtack text-[10px]"></i>
+                            </button>
+                            {isEditable && (
+                              <button
+                                onClick={() => {
+                                  setEditingMessage(msg);
+                                  setChatInput(msg.message);
+                                  setTimeout(
+                                    () => chatInputRef.current?.focus(),
+                                    50,
+                                  );
+                                }}
+                                className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
+                                title="Edit (Within 2 hrs)"
+                              >
+                                <i className="fa-solid fa-pen text-[10px]"></i>
+                              </button>
+                            )}
+                          </div>
+
+                          <div
+                            className={`flex gap-3 max-w-[75%] ${isMe ? "flex-row-reverse" : "flex-row"}`}
+                          >
+                            {msg.profiles?.avatar_url ? (
+                              <img
+                                src={msg.profiles.avatar_url}
+                                alt="Avatar"
+                                className="w-8 h-8 rounded-full object-cover shadow-sm self-end border border-white"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs shadow-sm self-end border border-white">
+                                {msg.profiles?.full_name?.charAt(0) || "?"}
+                              </div>
+                            )}
+
+                            <div
+                              className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                            >
+                              <div
+                                className={`px-5 py-3 shadow-sm text-sm border ${getChatBubbleStyle(senderTeam, isMe, showRoleBadgeAndColors)}`}
+                              >
+                                {repliedMsg && (
+                                  <div
+                                    onClick={() =>
+                                      scrollToMessage(repliedMsg.id)
+                                    }
+                                    className={`mb-3 p-2.5 rounded-xl cursor-pointer border-l-4 transition-colors ${isMe ? "bg-indigo-700/50 border-l-indigo-300 text-indigo-100 hover:bg-indigo-700" : "bg-slate-50 border-l-indigo-500 text-slate-600 hover:bg-slate-100 border border-slate-200"}`}
+                                  >
+                                    <span
+                                      className={`font-bold text-[10px] uppercase tracking-widest block mb-1 ${isMe ? "text-indigo-200" : "text-indigo-600"}`}
+                                    >
+                                      {repliedMsg.profiles?.full_name ||
+                                        "Unknown"}
+                                    </span>
+                                    <span className="text-xs truncate block max-w-[200px] opacity-90">
+                                      {repliedMsg.message || "Media Attachment"}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div
+                                  className={`flex justify-between items-baseline mb-2 gap-4 border-b ${isMe ? "border-white/20" : "border-slate-200"} pb-1.5`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`block font-extrabold text-xs ${isMe ? "text-white" : showRoleBadgeAndColors ? getChatNameColor(senderTeam) : "text-slate-900"}`}
+                                    >
+                                      {isMe
+                                        ? "You"
+                                        : msg.profiles?.full_name || "Unknown"}
+                                    </span>
+
+                                    {!isMe &&
+                                      senderTeam !== "Unassigned" &&
+                                      showRoleBadgeAndColors && (
+                                        <span
+                                          className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm border ${getDivisionStyle(senderTeam)}`}
+                                        >
+                                          {senderTeam}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <span
+                                    className={`text-[9px] font-bold uppercase tracking-widest ${isMe ? "text-indigo-200" : "text-slate-400"}`}
+                                  >
+                                    {new Date(
+                                      msg.created_at,
+                                    ).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+
+                                {msg.media_type === "sticker" && (
+                                  <img
+                                    src={msg.media_url}
+                                    className="w-28 h-28 object-contain my-2 drop-shadow-md"
+                                  />
+                                )}
+                                {msg.media_type === "image" && (
+                                  <img
+                                    src={msg.media_url}
+                                    alt="Chat Upload"
+                                    className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
+                                    style={{ maxHeight: "300px" }}
+                                  />
+                                )}
+                                {msg.media_type === "video" && (
+                                  <video
+                                    src={msg.media_url}
+                                    controls
+                                    className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
+                                    style={{ maxHeight: "300px" }}
+                                  />
+                                )}
+                                {msg.message && (
+                                  <p className="whitespace-pre-wrap leading-relaxed font-medium">
+                                    {renderMessageText(msg.message)}
+                                  </p>
+                                )}
+
+                                {msg.edited_at && (
+                                  <span
+                                    className={`block text-right text-[9px] italic font-bold mt-1 ${isMe ? "text-indigo-300" : "text-slate-400"}`}
+                                  >
+                                    Edited
+                                  </span>
+                                )}
+
+                                {isMe && readByText && (
+                                  <div className="text-[10px] text-indigo-200 mt-2 text-right italic font-bold flex justify-end items-center gap-1">
+                                    <i className="fa-solid fa-check-double"></i>{" "}
+                                    {readByText}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <div className="absolute bottom-[90px] left-0 w-full px-4 pointer-events-none flex flex-col items-center z-20">
+                  {showStickerPicker && (
+                    <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xl w-72 pointer-events-auto mb-2 self-start ml-2 flex flex-wrap gap-2 max-h-56 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2">
+                      <div className="w-full flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                          Stickers Vault
+                        </span>
+                        <button
+                          onClick={() => stickerInputRef.current.click()}
+                          className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition-colors shadow-sm"
+                        >
+                          <i className="fa-solid fa-plus mr-1"></i> Custom
+                        </button>
+                        <input
+                          type="file"
+                          ref={stickerInputRef}
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleAddSticker}
+                        />
+                      </div>
+                      {customStickers.length === 0 ? (
+                        <p className="text-xs text-slate-400 p-4 text-center w-full bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                          No custom stickers added. Click + Custom to upload.
+                        </p>
+                      ) : (
+                        customStickers.map((src, i) => (
+                          <img
+                            key={i}
+                            src={src}
+                            onClick={() => sendSticker(src)}
+                            className="w-14 h-14 object-cover cursor-pointer hover:scale-110 transition-transform bg-slate-50 rounded-xl p-1.5 border border-slate-200 shadow-sm"
+                          />
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {pastedImage && (
+                    <div className="bg-white border border-indigo-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
+                      <div className="flex items-center gap-4">
+                        <img
+                          src={URL.createObjectURL(pastedImage)}
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 shadow-sm"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+                            Clipboard Attachment
+                          </span>
+                          <span className="text-xs font-bold text-slate-600">
+                            Image ready to send
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={removePastedImage}
+                        className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+
+                  {replyingToMessage && (
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
+                      <div className="flex flex-col pl-2 border-l border-slate-100">
+                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">
+                          <i className="fa-solid fa-reply mr-1"></i> Replying to{" "}
+                          {replyingToMessage.profiles?.full_name || "Message"}
+                        </span>
+                        <span className="text-xs text-slate-600 font-medium truncate w-[300px] sm:w-[500px]">
+                          {replyingToMessage.message || "Media Attachment"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setReplyingToMessage(null)}
+                        className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-white z-10 relative">
+                  {editingMessage && (
+                    <div className="absolute -top-8 left-4 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-t-xl flex items-center gap-2 shadow-sm">
+                      <i className="fa-solid fa-pen"></i> Editing Message{" "}
+                      <button
+                        onClick={() => {
+                          setEditingMessage(null);
+                          setChatInput("");
+                        }}
+                        className="ml-3 hover:text-rose-600 transition-colors"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex items-end gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 pr-3 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-sm">
+                    <button
+                      onClick={() => setShowStickerPicker(!showStickerPicker)}
+                      className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors shrink-0 mb-0.5 border ${showStickerPicker ? "bg-indigo-50 text-indigo-600 border-indigo-100" : "bg-white text-slate-400 hover:text-indigo-600 hover:bg-slate-100 border-slate-200 shadow-sm"}`}
+                      title="Stickers"
+                    >
+                      <i className="fa-regular fa-face-smile text-lg"></i>
+                    </button>
+
+                    <input
+                      type="file"
+                      ref={chatMediaInputRef}
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={handleChatMediaUpload}
+                    />
+                    <button
+                      onClick={() => chatMediaInputRef.current.click()}
+                      disabled={isSendingChat}
+                      className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors shrink-0 mb-0.5 shadow-sm bg-white border border-slate-200"
+                      title="Upload Image/Video"
+                    >
+                      <i className="fa-solid fa-paperclip text-lg"></i>
+                    </button>
+
+                    <textarea
+                      ref={chatInputRef}
+                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-900 px-2 py-3 resize-none custom-scrollbar outline-none"
+                      placeholder={
+                        editingMessage
+                          ? "Edit your message..."
+                          : `Message... (Ctrl+V to paste images)`
+                      }
+                      value={chatInput}
+                      rows={
+                        chatInput.split("\n").length > 1
+                          ? Math.min(chatInput.split("\n").length, 5)
+                          : 1
+                      }
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onPaste={handlePaste}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendChatMessage();
+                        }
+                      }}
+                      disabled={isSendingChat}
+                      style={{ maxHeight: "120px" }}
+                    />
+
+                    <button
+                      onClick={handleSendChatMessage}
+                      disabled={
+                        isSendingChat ||
+                        (!chatInput.trim() && !pastedImage && !isSendingChat)
+                      }
+                      className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-0.5 shadow-sm"
+                    >
+                      {isSendingChat ? (
+                        <i className="fa-solid fa-spinner fa-spin"></i>
+                      ) : (
+                        <i className="fa-solid fa-paper-plane"></i>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* ALL OTHER SCROLLING TABS */
+            <div className="flex-1 overflow-y-auto w-full custom-scrollbar pr-2 pb-10 p-4 sm:p-6 lg:p-8">
               {/* SECTION: DASHBOARD */}
               {activeTab === "dashboard" && (
-                <div className="space-y-8 animate-in fade-in duration-500 w-full">
+                <div className="space-y-8 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div>
                     <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
                       Dashboard Overview
@@ -2597,7 +3290,22 @@ export default function ZenTechDashboard() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                  {userProfile.role === "team_lead" &&
+                    userProfile.warning_count >= 3 && (
+                      <div className="bg-rose-600 text-white font-black text-[13px] py-3 px-4 rounded-xl shadow-md border border-rose-700 animate-in slide-in-from-top-2">
+                        <marquee
+                          className="tracking-[0.2em] uppercase"
+                          scrollamount="6"
+                        >
+                          YOU HAVE BROKEN RULES 3 TIMES HENCE YOU AND YOUR TEAM
+                          ARE INELIGIBLE FOR PAID INTERNSHIP.
+                        </marquee>
+                      </div>
+                    )}
+
+                  <div
+                    className={`grid grid-cols-1 md:grid-cols-2 ${userProfile.role === "ai_engineer" ? "xl:grid-cols-3" : "xl:grid-cols-4"} gap-6 w-full`}
+                  >
                     <div className="bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
                       <div className="flex items-center gap-4 mb-4">
                         <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 text-2xl group-hover:scale-110 transition-transform">
@@ -2668,6 +3376,67 @@ export default function ZenTechDashboard() {
                         Priority Action
                       </div>
                     </div>
+
+                    {userProfile.role === "admin" && (
+                      <div
+                        onClick={openAdminWarningsModal}
+                        className="cursor-pointer bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group"
+                      >
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 text-2xl group-hover:scale-110 transition-transform">
+                            <i className="fa-solid fa-gavel"></i>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                              Warning
+                            </p>
+                            <h3 className="text-3xl font-black text-slate-900">
+                              {allTeamsData.reduce((acc, team) => {
+                                const lead = Array.isArray(team.profiles)
+                                  ? team.profiles[0]
+                                  : team.profiles;
+                                return acc + (lead?.warning_count > 0 ? 1 : 0);
+                              }, 0)}{" "}
+                            </h3>
+                          </div>
+                        </div>
+                        <div className="flex items-center text-[11px] font-bold text-rose-700 bg-rose-50 w-fit px-3 py-1.5 rounded-lg border border-rose-200">
+                          <i className="fa-solid fa-users-viewfinder mr-1.5"></i>{" "}
+                          Manage Warnings
+                        </div>
+                      </div>
+                    )}
+
+                    {userProfile.role === "team_lead" && (
+                      <div
+                        onClick={openLeadWarningModal}
+                        className={`cursor-pointer bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border ${userProfile.warning_count > 0 ? "border-rose-300 hover:border-rose-400 bg-rose-50/50" : "border-slate-200 hover:border-slate-300"} hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group`}
+                      >
+                        <div className="flex items-center gap-4 mb-4">
+                          <div
+                            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform ${userProfile.warning_count > 0 ? "bg-rose-100 text-rose-600" : "bg-emerald-50 text-emerald-500"}`}
+                          >
+                            <i
+                              className={`fa-solid ${userProfile.warning_count > 0 ? "fa-circle-exclamation" : "fa-shield-check"}`}
+                            ></i>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                              Warning
+                            </p>
+                            <h3 className="text-3xl font-black text-slate-900">
+                              {userProfile.warning_count || 0}/3
+                            </h3>
+                          </div>
+                        </div>
+                        <div
+                          className={`flex items-center text-[11px] font-bold w-fit px-3 py-1.5 rounded-lg border ${userProfile.warning_count > 0 ? "text-rose-700 bg-rose-100 border-rose-200" : "text-emerald-700 bg-emerald-50 border-emerald-200"}`}
+                        >
+                          <i className="fa-solid fa-circle-info mr-1.5"></i>{" "}
+                          View Details
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
@@ -2741,7 +3510,7 @@ export default function ZenTechDashboard() {
                       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
                         <h3 className="text-xl font-extrabold text-slate-900 flex items-center">
                           <i className="fa-solid fa-bell mr-3 text-indigo-500"></i>{" "}
-                          Active Network Pings
+                          Notifications
                         </h3>
                       </div>
 
@@ -2801,7 +3570,7 @@ export default function ZenTechDashboard() {
 
               {/* SECTION: TEAM MANAGEMENT */}
               {activeTab === "team" && (
-                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div>
                     <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
                       Team Management
@@ -2810,7 +3579,7 @@ export default function ZenTechDashboard() {
                       Manage operational deployments and engineer assignments.
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1 min-h-0 w-full">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
                     {userProfile.role === "admin" && (
                       <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden">
                         <div className="p-6 border-b border-slate-100 bg-white">
@@ -2818,7 +3587,7 @@ export default function ZenTechDashboard() {
                             Unassigned Personnel
                           </h3>
                         </div>
-                        <div className="overflow-y-auto p-4 custom-scrollbar bg-slate-50 flex-1">
+                        <div className="p-4 bg-slate-50">
                           {unassignedEngineers.length === 0 ? (
                             <div className="text-center text-slate-400 py-8 font-bold text-sm">
                               No unassigned personnel.
@@ -2856,7 +3625,7 @@ export default function ZenTechDashboard() {
                             : "My Division Personnel"}
                         </h3>
                       </div>
-                      <div className="overflow-y-auto p-4 custom-scrollbar bg-slate-50 flex-1">
+                      <div className="p-4 bg-slate-50">
                         {userProfile.role === "admin" ? (
                           allTeamsData.map((team) => {
                             const leadProf = Array.isArray(team.profiles)
@@ -2875,23 +3644,42 @@ export default function ZenTechDashboard() {
                                     <div>
                                       <span className="font-black text-indigo-900 block">
                                         {leadProf.full_name}
+                                        <span className="text-[10px] text-rose-600 font-bold ml-2">
+                                          ({leadProf.warning_count || 0}/3
+                                          Warnings)
+                                        </span>
                                       </span>
                                       <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest">
                                         Team Lead
                                       </span>
                                     </div>
-                                    <button
-                                      onClick={() =>
-                                        handleAssignTaskToMember(
-                                          leadProf.id,
-                                          leadProf.full_name,
-                                        )
-                                      }
-                                      className="text-xs bg-indigo-600 border border-indigo-700 text-white font-bold px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-                                    >
-                                      <i className="fa-solid fa-plus mr-1"></i>{" "}
-                                      Assign Task
-                                    </button>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() =>
+                                          handleWarnTeamLead(
+                                            leadProf.id,
+                                            leadProf.full_name,
+                                            leadProf.warning_count || 0,
+                                          )
+                                        }
+                                        className="text-xs bg-amber-50 border border-amber-200 text-amber-700 font-bold px-3 py-2 rounded-lg hover:bg-amber-100 transition-colors shadow-sm"
+                                        title="Issue Warning"
+                                      >
+                                        <i className="fa-solid fa-triangle-exclamation"></i>
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          handleAssignTaskToMember(
+                                            leadProf.id,
+                                            leadProf.full_name,
+                                          )
+                                        }
+                                        className="text-xs bg-indigo-600 border border-indigo-700 text-white font-bold px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                                      >
+                                        <i className="fa-solid fa-plus mr-1"></i>{" "}
+                                        Assign Task
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
 
@@ -2965,7 +3753,7 @@ export default function ZenTechDashboard() {
 
               {/* SECTION: STAFF DIRECTORY */}
               {activeTab === "staff" && userProfile.role === "admin" && (
-                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div>
                     <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
                       Staff Directory
@@ -3021,7 +3809,7 @@ export default function ZenTechDashboard() {
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto flex-1 w-full">
+                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto w-full">
                     <table className="w-full text-left border-collapse min-w-[1000px]">
                       <thead>
                         <tr className="bg-slate-50 text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-200">
@@ -3138,619 +3926,9 @@ export default function ZenTechDashboard() {
                 </div>
               )}
 
-              {/* MODIFIED SECTION: CHAT / COMMS NETWORK */}
-              {activeTab === "chat" && (
-                <div className="h-full flex gap-6 pb-2 animate-in fade-in duration-500 w-full relative">
-                  {/* 1-1 Chat Search Modal */}
-                  {showNewChatModal && (
-                    <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                      <div className="bg-white rounded-[24px] shadow-xl w-full max-w-md flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
-                        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                          <h3 className="font-black text-slate-900">
-                            Start Direct Message
-                          </h3>
-                          <button
-                            onClick={() => setShowNewChatModal(false)}
-                            className="text-slate-400 hover:text-rose-500"
-                          >
-                            <i className="fa-solid fa-xmark text-xl"></i>
-                          </button>
-                        </div>
-                        <div className="p-4 border-b border-slate-100 relative">
-                          <i className="fa-solid fa-search absolute left-7 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                          <input
-                            type="text"
-                            placeholder="Search Staff ID or Name..."
-                            value={chatSearchQuery}
-                            onChange={(e) => setChatSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-indigo-400 transition-colors"
-                          />
-                        </div>
-                        <div className="overflow-y-auto max-h-[300px] p-2 custom-scrollbar">
-                          {allUsersList.filter(
-                            (s) =>
-                              s.id !== userProfile.id &&
-                              (s.full_name
-                                .toLowerCase()
-                                .includes(chatSearchQuery.toLowerCase()) ||
-                                s.staff_id
-                                  .toLowerCase()
-                                  .includes(chatSearchQuery.toLowerCase())),
-                          ).length === 0 ? (
-                            <p className="text-slate-400 text-center py-4 text-sm font-bold">
-                              No staff found.
-                            </p>
-                          ) : (
-                            allUsersList
-                              .filter(
-                                (s) =>
-                                  s.id !== userProfile.id &&
-                                  (s.full_name
-                                    .toLowerCase()
-                                    .includes(chatSearchQuery.toLowerCase()) ||
-                                    s.staff_id
-                                      .toLowerCase()
-                                      .includes(chatSearchQuery.toLowerCase())),
-                              )
-                              .map((staff) => (
-                                <div
-                                  key={staff.id}
-                                  onClick={() =>
-                                    handleStartDirectMessage(staff.id)
-                                  }
-                                  className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer rounded-xl transition-colors border border-transparent hover:border-slate-200"
-                                >
-                                  <img
-                                    src={
-                                      staff.avatar_url ||
-                                      `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.full_name)}&background=f3f4f6&color=64748b`
-                                    }
-                                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                                  />
-                                  <div>
-                                    <p className="font-bold text-slate-900 text-sm">
-                                      {staff.full_name}
-                                    </p>
-                                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">
-                                      {staff.staff_id} •{" "}
-                                      {staff.role.replace("_", " ")}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="w-[320px] bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden flex-shrink-0">
-                    <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                      <h2 className="font-black text-slate-900 text-xl tracking-tight">
-                        Messages
-                      </h2>
-                      <button
-                        onClick={() => setShowNewChatModal(true)}
-                        title="New 1-1 Chat"
-                        className="w-8 h-8 rounded-xl bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 flex items-center justify-center transition-all border border-slate-200 shadow-sm"
-                      >
-                        <i className="fa-solid fa-pen-to-square text-sm"></i>
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar bg-white">
-                      {availableChannels.map((ch) => {
-                        const preview = channelPreviews[ch.id];
-                        return (
-                          <button
-                            key={ch.id}
-                            onClick={() => setActiveChatChannel(ch.id)}
-                            className={`w-full text-left px-4 py-4 rounded-[20px] transition-all duration-200 flex items-center gap-4 ${activeChatChannel === ch.id ? "bg-indigo-50 shadow-sm border border-indigo-100" : "border border-transparent hover:bg-slate-50"}`}
-                          >
-                            <div className="relative shrink-0">
-                              <img
-                                src={ch.avatar_url}
-                                alt="Group"
-                                className="w-12 h-12 rounded-full object-cover bg-slate-100 border border-slate-200 shadow-sm"
-                              />
-                            </div>
-                            <div className="flex flex-col overflow-hidden w-full">
-                              <div className="flex justify-between items-center w-full">
-                                <span className="font-extrabold text-slate-900 text-sm truncate">
-                                  {ch.label}
-                                </span>
-                                {preview?.time && (
-                                  <span
-                                    className={`text-[10px] whitespace-nowrap ${preview.count > 0 && activeChatChannel !== ch.id ? "text-indigo-600 font-black" : "text-slate-400 font-bold"}`}
-                                  >
-                                    {preview.time}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex justify-between items-center w-full mt-1">
-                                <span className="text-xs text-slate-500 truncate pr-2 font-medium">
-                                  {preview ? (
-                                    <span className="font-bold text-slate-700">
-                                      {preview.sender}:{" "}
-                                    </span>
-                                  ) : (
-                                    ""
-                                  )}
-                                  {preview ? preview.text : "No messages yet"}
-                                </span>
-                                {preview?.count > 0 &&
-                                  activeChatChannel !== ch.id && (
-                                    <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center shadow-sm">
-                                      {preview.count}
-                                    </span>
-                                  )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden w-full relative">
-                    <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center relative z-20 shadow-sm">
-                      {activeChObj && (
-                        <div
-                          className="flex items-center gap-4 cursor-pointer hover:bg-white p-2 rounded-2xl transition-colors w-full"
-                          onClick={showGroupInfo}
-                          title="View Group Info"
-                        >
-                          <div className="relative group">
-                            <img
-                              src={activeChObj.avatar_url}
-                              alt="Group Avatar"
-                              className="w-12 h-12 rounded-full object-cover border border-slate-300 shadow-sm"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-black text-slate-900 text-lg truncate">
-                              {activeChObj.label}
-                            </h3>
-                            <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest truncate mt-0.5">
-                              {activeChObj.isDirect
-                                ? "Direct Message"
-                                : activeChObj.memberIds
-                                    .map(
-                                      (id) =>
-                                        globalDirectory[id]?.full_name?.split(
-                                          " ",
-                                        )[0],
-                                    )
-                                    .filter(Boolean)
-                                    .join(", ")}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {pinnedMessage && (
-                      <div
-                        onClick={() => scrollToMessage(pinnedMessage.id)}
-                        className="bg-indigo-50 border-b border-indigo-100 px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors z-10 shadow-sm animate-in slide-in-from-top-2"
-                      >
-                        <div className="flex items-center gap-3 overflow-hidden">
-                          <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center shrink-0">
-                            <i className="fa-solid fa-thumbtack text-indigo-500 text-sm"></i>
-                          </div>
-                          <div className="flex flex-col truncate">
-                            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
-                              Pinned Message
-                            </span>
-                            <span className="text-xs text-slate-700 font-medium truncate w-[300px] sm:w-[500px]">
-                              {pinnedMessage.message || "Media Attachment..."}
-                            </span>
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePinMessage(pinnedMessage.id, true);
-                          }}
-                          className="text-indigo-300 hover:text-rose-500 p-2 rounded-lg hover:bg-white transition-colors shrink-0"
-                        >
-                          <i className="fa-solid fa-xmark"></i>
-                        </button>
-                      </div>
-                    )}
-
-                    <div
-                      ref={chatContainerRef}
-                      onScroll={handleChatScroll}
-                      className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 custom-scrollbar"
-                    >
-                      {chatMessages.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                          <i className="fa-regular fa-comments text-6xl mb-4 text-slate-200"></i>
-                          <p className="text-sm font-bold">
-                            No messages yet. Start the conversation!
-                          </p>
-                        </div>
-                      ) : (
-                        chatMessages.map((msg) => {
-                          const isMe = msg.sender_id === userProfile.id;
-                          const isEditable =
-                            isMe &&
-                            new Date() - new Date(msg.created_at) <
-                              2 * 60 * 60 * 1000;
-                          const senderInfo =
-                            globalDirectory[msg.sender_id] || {};
-                          const senderTeam =
-                            senderInfo.team_name || "Unassigned";
-                          const repliedMsg = msg.reply_to
-                            ? chatMessages.find((m) => m.id === msg.reply_to)
-                            : null;
-
-                          const readByNames = (msg.read_by || [])
-                            .filter((id) => id !== msg.sender_id)
-                            .map(
-                              (id) =>
-                                globalDirectory[id]?.full_name?.split(" ")[0],
-                            )
-                            .filter(Boolean);
-                          const readByText =
-                            readByNames.length > 0
-                              ? `Seen by ${readByNames.join(", ")}`
-                              : "";
-
-                          return (
-                            <div
-                              key={msg.id}
-                              id={`msg-${msg.id}`}
-                              className={`flex flex-col w-full ${isMe ? "items-end" : "items-start"} mb-6`}
-                            >
-                              <div
-                                className={`flex items-center gap-1 mb-1 ${isMe ? "justify-end mr-12" : "justify-start ml-12"} bg-white border border-slate-200 rounded-md shadow-sm px-1 py-0.5`}
-                              >
-                                <button
-                                  onClick={() => setReplyingToMessage(msg)}
-                                  className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
-                                  title="Reply"
-                                >
-                                  <i className="fa-solid fa-reply text-[10px]"></i>
-                                </button>
-                                <button
-                                  onClick={() =>
-                                    handlePinMessage(msg.id, msg.is_pinned)
-                                  }
-                                  className={`w-6 h-6 rounded hover:bg-slate-100 flex items-center justify-center transition-colors ${msg.is_pinned ? "text-indigo-600 bg-indigo-50" : "text-slate-500"}`}
-                                  title={
-                                    msg.is_pinned ? "Unpin" : "Pin Message"
-                                  }
-                                >
-                                  <i className="fa-solid fa-thumbtack text-[10px]"></i>
-                                </button>
-                                {isEditable && (
-                                  <button
-                                    onClick={() => {
-                                      setEditingMessage(msg);
-                                      setChatInput(msg.message);
-                                      setTimeout(
-                                        () => chatInputRef.current?.focus(),
-                                        50,
-                                      );
-                                    }}
-                                    className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
-                                    title="Edit (Within 2 hrs)"
-                                  >
-                                    <i className="fa-solid fa-pen text-[10px]"></i>
-                                  </button>
-                                )}
-                              </div>
-
-                              <div
-                                className={`flex gap-3 max-w-[75%] ${isMe ? "flex-row-reverse" : "flex-row"}`}
-                              >
-                                {msg.profiles?.avatar_url ? (
-                                  <img
-                                    src={msg.profiles.avatar_url}
-                                    alt="Avatar"
-                                    className="w-8 h-8 rounded-full object-cover shadow-sm self-end border border-white"
-                                  />
-                                ) : (
-                                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs shadow-sm self-end border border-white">
-                                    {msg.profiles?.full_name?.charAt(0) || "?"}
-                                  </div>
-                                )}
-
-                                <div
-                                  className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-                                >
-                                  <div
-                                    className={`px-5 py-3 shadow-sm text-sm border ${getChatBubbleStyle(senderTeam, isMe, showRoleBadgeAndColors)}`}
-                                  >
-                                    {repliedMsg && (
-                                      <div
-                                        onClick={() =>
-                                          scrollToMessage(repliedMsg.id)
-                                        }
-                                        className={`mb-3 p-2.5 rounded-xl cursor-pointer border-l-4 transition-colors ${isMe ? "bg-indigo-700/50 border-l-indigo-300 text-indigo-100 hover:bg-indigo-700" : "bg-slate-50 border-l-indigo-500 text-slate-600 hover:bg-slate-100 border border-slate-200"}`}
-                                      >
-                                        <span
-                                          className={`font-bold text-[10px] uppercase tracking-widest block mb-1 ${isMe ? "text-indigo-200" : "text-indigo-600"}`}
-                                        >
-                                          {repliedMsg.profiles?.full_name ||
-                                            "Unknown"}
-                                        </span>
-                                        <span className="text-xs truncate block max-w-[200px] opacity-90">
-                                          {repliedMsg.message ||
-                                            "Media Attachment"}
-                                        </span>
-                                      </div>
-                                    )}
-
-                                    <div
-                                      className={`flex justify-between items-baseline mb-2 gap-4 border-b ${isMe ? "border-white/20" : "border-slate-200"} pb-1.5`}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <span
-                                          className={`block font-extrabold text-xs ${isMe ? "text-white" : showRoleBadgeAndColors ? getChatNameColor(senderTeam) : "text-slate-900"}`}
-                                        >
-                                          {isMe
-                                            ? "You"
-                                            : msg.profiles?.full_name ||
-                                              "Unknown"}
-                                        </span>
-
-                                        {!isMe &&
-                                          senderTeam !== "Unassigned" &&
-                                          showRoleBadgeAndColors && (
-                                            <span
-                                              className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm border ${getDivisionStyle(senderTeam)}`}
-                                            >
-                                              {senderTeam}
-                                            </span>
-                                          )}
-                                      </div>
-                                      <span
-                                        className={`text-[9px] font-bold uppercase tracking-widest ${isMe ? "text-indigo-200" : "text-slate-400"}`}
-                                      >
-                                        {new Date(
-                                          msg.created_at,
-                                        ).toLocaleTimeString([], {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })}
-                                      </span>
-                                    </div>
-
-                                    {msg.media_type === "sticker" && (
-                                      <img
-                                        src={msg.media_url}
-                                        className="w-28 h-28 object-contain my-2 drop-shadow-md"
-                                      />
-                                    )}
-                                    {msg.media_type === "image" && (
-                                      <img
-                                        src={msg.media_url}
-                                        alt="Chat Upload"
-                                        className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
-                                        style={{ maxHeight: "300px" }}
-                                      />
-                                    )}
-                                    {msg.media_type === "video" && (
-                                      <video
-                                        src={msg.media_url}
-                                        controls
-                                        className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
-                                        style={{ maxHeight: "300px" }}
-                                      />
-                                    )}
-                                    {msg.message && (
-                                      <p className="whitespace-pre-wrap leading-relaxed font-medium">
-                                        {renderMessageText(msg.message)}
-                                      </p>
-                                    )}
-
-                                    {msg.edited_at && (
-                                      <span
-                                        className={`block text-right text-[9px] italic font-bold mt-1 ${isMe ? "text-indigo-300" : "text-slate-400"}`}
-                                      >
-                                        Edited
-                                      </span>
-                                    )}
-
-                                    {isMe && readByText && (
-                                      <div className="text-[10px] text-indigo-200 mt-2 text-right italic font-bold flex justify-end items-center gap-1">
-                                        <i className="fa-solid fa-check-double"></i>{" "}
-                                        {readByText}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                      <div ref={chatEndRef} />
-                    </div>
-
-                    <div className="absolute bottom-[90px] left-0 w-full px-4 pointer-events-none flex flex-col items-center z-20">
-                      {showStickerPicker && (
-                        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xl w-72 pointer-events-auto mb-2 self-start ml-2 flex flex-wrap gap-2 max-h-56 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2">
-                          <div className="w-full flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                              Stickers Vault
-                            </span>
-                            <button
-                              onClick={() => stickerInputRef.current.click()}
-                              className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition-colors shadow-sm"
-                            >
-                              <i className="fa-solid fa-plus mr-1"></i> Custom
-                            </button>
-                            <input
-                              type="file"
-                              ref={stickerInputRef}
-                              accept="image/*"
-                              className="hidden"
-                              onChange={handleAddSticker}
-                            />
-                          </div>
-                          {customStickers.length === 0 ? (
-                            <p className="text-xs text-slate-400 p-4 text-center w-full bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                              No custom stickers added. Click + Custom to
-                              upload.
-                            </p>
-                          ) : (
-                            customStickers.map((src, i) => (
-                              <img
-                                key={i}
-                                src={src}
-                                onClick={() => sendSticker(src)}
-                                className="w-14 h-14 object-cover cursor-pointer hover:scale-110 transition-transform bg-slate-50 rounded-xl p-1.5 border border-slate-200 shadow-sm"
-                              />
-                            ))
-                          )}
-                        </div>
-                      )}
-
-                      {pastedImage && (
-                        <div className="bg-white border border-indigo-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
-                          <div className="flex items-center gap-4">
-                            <img
-                              src={URL.createObjectURL(pastedImage)}
-                              className="w-12 h-12 object-cover rounded-lg border border-slate-200 shadow-sm"
-                            />
-                            <div className="flex flex-col">
-                              <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
-                                Clipboard Attachment
-                              </span>
-                              <span className="text-xs font-bold text-slate-600">
-                                Image ready to send
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={removePastedImage}
-                            className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
-                          >
-                            <i className="fa-solid fa-xmark"></i>
-                          </button>
-                        </div>
-                      )}
-
-                      {replyingToMessage && (
-                        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
-                          <div className="flex flex-col pl-2 border-l border-slate-100">
-                            <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">
-                              <i className="fa-solid fa-reply mr-1"></i>{" "}
-                              Replying to{" "}
-                              {replyingToMessage.profiles?.full_name ||
-                                "Message"}
-                            </span>
-                            <span className="text-xs text-slate-600 font-medium truncate w-[300px] sm:w-[500px]">
-                              {replyingToMessage.message || "Media Attachment"}
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => setReplyingToMessage(null)}
-                            className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
-                          >
-                            <i className="fa-solid fa-xmark"></i>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-4 border-t border-slate-200 bg-white z-10 relative">
-                      {editingMessage && (
-                        <div className="absolute -top-8 left-4 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-t-xl flex items-center gap-2 shadow-sm">
-                          <i className="fa-solid fa-pen"></i> Editing Message{" "}
-                          <button
-                            onClick={() => {
-                              setEditingMessage(null);
-                              setChatInput("");
-                            }}
-                            className="ml-3 hover:text-rose-600 transition-colors"
-                          >
-                            <i className="fa-solid fa-xmark"></i>
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="flex items-end gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 pr-3 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-sm">
-                        <button
-                          onClick={() =>
-                            setShowStickerPicker(!showStickerPicker)
-                          }
-                          className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors shrink-0 mb-0.5 border ${showStickerPicker ? "bg-indigo-50 text-indigo-600 border-indigo-100" : "bg-white text-slate-400 hover:text-indigo-600 hover:bg-slate-100 border-slate-200 shadow-sm"}`}
-                          title="Stickers"
-                        >
-                          <i className="fa-regular fa-face-smile text-lg"></i>
-                        </button>
-
-                        <input
-                          type="file"
-                          ref={chatMediaInputRef}
-                          accept="image/*,video/*"
-                          className="hidden"
-                          onChange={handleChatMediaUpload}
-                        />
-                        <button
-                          onClick={() => chatMediaInputRef.current.click()}
-                          disabled={isSendingChat}
-                          className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors shrink-0 mb-0.5 shadow-sm bg-white border border-slate-200"
-                          title="Upload Image/Video"
-                        >
-                          <i className="fa-solid fa-paperclip text-lg"></i>
-                        </button>
-
-                        <textarea
-                          ref={chatInputRef}
-                          className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-900 px-2 py-3 resize-none custom-scrollbar outline-none"
-                          placeholder={
-                            editingMessage
-                              ? "Edit your message..."
-                              : `Message... (Ctrl+V to paste images)`
-                          }
-                          value={chatInput}
-                          rows={
-                            chatInput.split("\n").length > 1
-                              ? Math.min(chatInput.split("\n").length, 5)
-                              : 1
-                          }
-                          onChange={(e) => setChatInput(e.target.value)}
-                          onPaste={handlePaste}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendChatMessage();
-                            }
-                          }}
-                          disabled={isSendingChat}
-                          style={{ maxHeight: "120px" }}
-                        />
-
-                        <button
-                          onClick={handleSendChatMessage}
-                          disabled={
-                            isSendingChat ||
-                            (!chatInput.trim() &&
-                              !pastedImage &&
-                              !isSendingChat)
-                          }
-                          className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-0.5 shadow-sm"
-                        >
-                          {isSendingChat ? (
-                            <i className="fa-solid fa-spinner fa-spin"></i>
-                          ) : (
-                            <i className="fa-solid fa-paper-plane"></i>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* SECTION: DEPARTMENTS */}
               {activeTab === "departments" && userProfile.role === "admin" && (
-                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div>
                     <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
                       Departments & Teams
@@ -3760,7 +3938,7 @@ export default function ZenTechDashboard() {
                       operatives.
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 w-full">
                     {allTeamsData.map((team) => {
                       const leadProf = Array.isArray(team.profiles)
                         ? team.profiles[0]
@@ -3827,7 +4005,7 @@ export default function ZenTechDashboard() {
 
               {/* SECTION: REPORTS */}
               {activeTab === "reports" && (
-                <div className="h-full flex flex-col space-y-6 animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div>
                     <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
                       Operational Reports
@@ -3858,14 +4036,14 @@ export default function ZenTechDashboard() {
                       </div>
                     </div>
                   )}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 min-h-0 w-full">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
                     {userProfile.role === "team_lead" && (
                       <div className="lg:col-span-1 bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 p-8 flex flex-col transition-all">
                         <h3 className="text-lg font-black text-slate-900 mb-6 border-b border-slate-100 pb-4">
                           Upload New Report
                         </h3>
                         <div
-                          className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-[20px] bg-slate-50 transition-colors p-8 text-center cursor-pointer"
+                          className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-[20px] bg-slate-50 transition-colors p-8 text-center cursor-pointer min-h-[250px]"
                           onClick={() => fileInputRef.current.click()}
                         >
                           <i className="fa-solid fa-cloud-arrow-up text-5xl text-indigo-500 mb-4"></i>
@@ -3909,9 +4087,9 @@ export default function ZenTechDashboard() {
                           Submitted Reports Registry
                         </h3>
                       </div>
-                      <div className="overflow-x-auto custom-scrollbar flex-1 bg-white">
+                      <div className="overflow-x-auto w-full bg-white">
                         {reports.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center p-8 bg-slate-50">
+                          <div className="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-slate-50">
                             <i className="fa-solid fa-folder-open text-6xl text-slate-300 mb-4"></i>
                             <p className="text-lg font-bold text-slate-600">
                               No reports found in the registry.
@@ -4052,7 +4230,7 @@ export default function ZenTechDashboard() {
 
               {/* SECTION: TASKS */}
               {activeTab === "tasks" && (
-                <div className="h-full flex flex-col animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div className="flex justify-between items-end mb-8 w-full">
                     <div>
                       <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
@@ -4074,13 +4252,13 @@ export default function ZenTechDashboard() {
                       </button>
                     )}
                   </div>
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto flex-1 w-full">
+                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto w-full">
                     {loadingTasks ? (
                       <div className="flex items-center justify-center h-64 text-indigo-600">
                         <i className="fa-solid fa-circle-notch fa-spin text-4xl"></i>
                       </div>
                     ) : tasks.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-center bg-slate-50">
+                      <div className="flex flex-col items-center justify-center min-h-[300px] text-center bg-slate-50">
                         <i className="fa-solid fa-check-double text-6xl text-emerald-500 mb-5"></i>
                         <h3 className="text-2xl font-black text-slate-900">
                           Queue Cleared
@@ -4275,7 +4453,7 @@ export default function ZenTechDashboard() {
 
               {/* SECTION: ACTIVITY LOG */}
               {activeTab === "activity-log" && userProfile.role === "admin" && (
-                <div className="h-full flex flex-col animate-in fade-in duration-500 w-full">
+                <div className="flex flex-col animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <div className="flex justify-between items-end mb-8 w-full">
                     <div>
                       <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
@@ -4286,8 +4464,8 @@ export default function ZenTechDashboard() {
                       </p>
                     </div>
                   </div>
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col flex-1 min-h-[50vh] overflow-hidden w-full">
-                    <div className="overflow-x-auto custom-scrollbar">
+                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col w-full">
+                    <div className="overflow-x-auto w-full custom-scrollbar">
                       <div className="min-w-[800px]">
                         <div className="p-5 border-b border-slate-200 bg-slate-50 grid grid-cols-12 text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
                           <div className="col-span-3">Timestamp</div>
@@ -4332,11 +4510,11 @@ export default function ZenTechDashboard() {
 
               {/* GENERIC EMPTY SECTIONS */}
               {["ai-agents", "clients"].includes(activeTab) && (
-                <div className="h-full animate-in fade-in duration-500 w-full">
+                <div className="animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
                   <h1 className="text-[32px] font-black text-slate-900 mb-8 capitalize tracking-tight">
                     {activeTab.replace("-", " ")}
                   </h1>
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-8 text-center h-[60vh] flex flex-col justify-center items-center">
+                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-8 text-center min-h-[400px] flex flex-col justify-center items-center">
                     <i className="fa-solid fa-cubes-stacked text-7xl text-slate-200 mb-6 drop-shadow-sm"></i>
                     <h2 className="text-2xl font-black text-slate-900">
                       Registry Module Active
@@ -4349,7 +4527,7 @@ export default function ZenTechDashboard() {
                 </div>
               )}
             </div>
-          </div>
+          )}
         </main>
       </div>
     </>
