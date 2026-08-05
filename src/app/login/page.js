@@ -304,7 +304,7 @@ export default function Login() {
       }
 
       // ====================================================================
-      // 6. TEMPORARY SUSPENSION
+      // 6. TEMPORARY SUSPENSION (NOW INCLUDES ADMIN REASON LOG)
       // ====================================================================
       if (profile.ban_status === "temporary") {
         // Strip UTC offsets for exact local time parsing
@@ -345,9 +345,14 @@ export default function Login() {
                       <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ea580c; box-shadow: 0 0 10px rgba(234,88,12,0.5);"></span>
                       <span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Security Notice</span>
                     </div>
-                    <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; font-weight: 500;">
-                      System protocols have detected abnormal activities associated with your credentials. Your access has been temporarily suspended pending review.
+                    <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0; font-weight: 500;">
+                      Your access to the system has been temporarily suspended pending a security review.
                     </p>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #ea580c; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+                      <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Reason Logged</span>
+                      <span style="display: block; font-size: 15px; font-weight: 700; color: #0f172a;">${profile.ban_reason || "System protocols have detected abnormal activities."}</span>
+                    </div>
 
                     <div class="stat-box">
                       <div>

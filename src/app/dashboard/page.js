@@ -1591,6 +1591,7 @@ export default function ZenTechDashboard() {
     });
   };
 
+  // MODIFIED: Added Deadline support to Assign Task
   const handleAssignTaskToMember = async (memberId, memberName) => {
     Swal.fire({
       title: "Retrieving Operative Data...",
@@ -1712,6 +1713,7 @@ export default function ZenTechDashboard() {
 
         let assignedTeamId = teamId;
 
+        // Locate correct division if Admin is assigning
         if (userProfile.role === "admin") {
           const { data: leadTeam } = await supabase
             .from("teams")
@@ -1774,6 +1776,7 @@ export default function ZenTechDashboard() {
     });
   };
 
+  // MODIFIED: Added Deadline support to Admin Directives
   const handleAdminDispatchDirective = async () => {
     const { value: formValues } = await Swal.fire({
       title: "Announcement",
@@ -1876,6 +1879,7 @@ export default function ZenTechDashboard() {
     }
   };
 
+  // MODIFIED: Edit Task allows Admin & Team Lead to change Title, Status, and Deadline
   const handleEditTask = async (task) => {
     const { value: formValues } = await Swal.fire({
       title: "Modify Assigned Task",
@@ -1926,6 +1930,7 @@ export default function ZenTechDashboard() {
     }
   };
 
+  // NEW: Restricted Task Update for AI Engineers (Only Status)
   const handleEngineerUpdateProgress = async (task) => {
     const { value: formValues } = await Swal.fire({
       title: "Update Task Progress",
