@@ -44,15 +44,41 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
+  // Compliance States
+  const [hasAgreedToTOS, setHasAgreedToTOS] = useState(false);
+  const [isTOSStored, setIsTOSStored] = useState(false);
+  const [showCookieBanner, setShowCookieBanner] = useState(false);
+
   useEffect(() => {
     // Suppress Next.js smooth scrolling warning
     document.documentElement.setAttribute("data-scroll-behavior", "smooth");
+
+    // Local Storage Checks for Compliance
+    const tosStatus = localStorage.getItem("zentech_tos_agreed");
+    if (tosStatus === "true") {
+      setHasAgreedToTOS(true);
+      setIsTOSStored(true);
+    }
+
+    const cookieStatus = localStorage.getItem("zentech_cookie_consent");
+    if (!cookieStatus) {
+      setShowCookieBanner(true);
+    }
   }, []);
 
-  // Time Calculation Engine for Live Countdowns (Timezone Bulletproofed)
+  const handleCookieAccept = () => {
+    localStorage.setItem("zentech_cookie_consent", "accepted");
+    setShowCookieBanner(false);
+  };
+
+  const handleCookieReject = () => {
+    localStorage.setItem("zentech_cookie_consent", "rejected");
+    setShowCookieBanner(false);
+  };
+
+  // Time Calculation Engine for Live Countdowns
   const getTimeRemaining = (endtime) => {
     if (!endtime) return "PENDING";
-    // Strip UTC offset so the browser parses it exactly as the local time the Admin intended
     const rawTime = endtime.replace(/(Z|[+-]\d{2}:\d{2})$/, "");
     const total = Date.parse(rawTime) - Date.parse(new Date());
     if (total <= 0) return "00:00:00";
@@ -70,6 +96,14 @@ export default function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    if (!hasAgreedToTOS) {
+      setErrorMsg(
+        "You must agree to the Terms & Conditions and Privacy Policy before proceeding.",
+      );
+      return;
+    }
+
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -119,19 +153,14 @@ export default function Login() {
 
       if (isMaintenanceActive && settings?.maintenance_end_time) {
         const now = new Date();
-        // Strip UTC offsets to force exact local time evaluation
         const rawTime = settings.maintenance_end_time.replace(
           /(Z|[+-]\d{2}:\d{2})$/,
           "",
         );
         const endTime = new Date(rawTime);
 
-        // If the current time is past the maintenance end time, bypass the lockdown
         if (now >= endTime) {
           isMaintenanceActive = false;
-
-          // ONLY attempt to auto-heal the database if the user is an Admin.
-          // This prevents Team Leads from triggering a silent RLS Security Crash.
           if (profile.role === "admin") {
             await supabase
               .from("system_settings")
@@ -147,12 +176,9 @@ export default function Login() {
 
       if (isMaintenanceActive && profile.role !== "admin") {
         await supabase.auth.signOut();
-
-        // Strip offset for accurate display
         const displayTime = new Date(
           settings.maintenance_end_time.replace(/(Z|[+-]\d{2}:\d{2})$/, ""),
         );
-
         Swal.fire({
           width: 800,
           padding: 0,
@@ -164,59 +190,30 @@ export default function Login() {
             <div class="enterprise-modal">
               <div class="enterprise-left" style="background: linear-gradient(135deg, ${COLORS.indigoDark} 0%, ${COLORS.indigo} 100%);">
                 <div style="position: absolute; top: -30px; left: -30px; width: 150px; height: 150px; background: rgba(255,255,255,0.05); border-radius: 50%;"></div>
-                <div style="position: absolute; bottom: -20px; right: -20px; width: 120px; height: 120px; background: rgba(6, 182, 212, 0.15); border-radius: 50%;"></div>
-                
                 <div style="position: relative; z-index: 10;">
-                  <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);">
-                    <i class="fa-solid fa-server"></i>
-                  </div>
+                  <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);"><i class="fa-solid fa-server"></i></div>
                   <h2 style="font-size: 28px; font-weight: 900; margin: 0 0 12px 0; line-height: 1.2; letter-spacing: -0.5px;">System<br/>Maintenance</h2>
                   <p style="font-size: 14px; color: #e0e7ff; font-weight: 500; margin: 0; line-height: 1.5;">Zen-Tech Enterprise Infrastructure Upgrade</p>
                 </div>
-                
-                <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1px;">
-                   Status: Offline
-                </div>
+                <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1px;">Status: Offline</div>
               </div>
-              
               <div class="enterprise-right">
                 <div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;">
-                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5);"></span>
-                    <span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Notice</span>
-                  </div>
-                  <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; font-weight: 500;">
-                    ${settings.maintenance_message || "The platform is currently undergoing scheduled backend upgrades. Secure uplinks are temporarily disabled."}
-                  </p>
-
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5);"></span><span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Notice</span></div>
+                  <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; font-weight: 500;">${settings.maintenance_message || "The platform is currently undergoing scheduled backend upgrades. Secure uplinks are temporarily disabled."}</p>
                   <div class="stat-box">
-                    <div>
-                      <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Expected Recovery</span>
-                      <span style="display: block; font-size: 15px; font-weight: 800; color: #0f172a;">${settings.maintenance_end_time ? displayTime.toLocaleString() : "Pending Technical Review"}</span>
-                    </div>
-                    <div class="stat-divider">
-                      <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Time Remaining</span>
-                      <span id="maint-timer" style="display: block; font-size: 22px; font-weight: 900; color: #f59e0b; font-variant-numeric: tabular-nums;">00:00:00</span>
-                    </div>
+                    <div><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Expected Recovery</span><span style="display: block; font-size: 15px; font-weight: 800; color: #0f172a;">${settings.maintenance_end_time ? displayTime.toLocaleString() : "Pending Technical Review"}</span></div>
+                    <div class="stat-divider"><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Time Remaining</span><span id="maint-timer" style="display: block; font-size: 22px; font-weight: 900; color: #f59e0b; font-variant-numeric: tabular-nums;">00:00:00</span></div>
                   </div>
                 </div>
-
-                <div style="margin-top: 32px; text-align: right;">
-                   <button id="close-ack-btn" class="action-btn" style="background: ${COLORS.indigo}; color: white; box-shadow: 0 4px 12px rgba(67, 56, 202, 0.3);">
-                      Acknowledge
-                   </button>
-                </div>
+                <div style="margin-top: 32px; text-align: right;"><button id="close-ack-btn" class="action-btn" style="background: ${COLORS.indigo}; color: white; box-shadow: 0 4px 12px rgba(67, 56, 202, 0.3);">Acknowledge</button></div>
               </div>
-            </div>
-          `,
+            </div>`,
           didOpen: () => {
             const popup = Swal.getPopup();
-
-            // Bypass React Reference Errors with a native click listener
             const closeBtn = popup.querySelector("#close-ack-btn");
             if (closeBtn)
               closeBtn.addEventListener("click", () => Swal.close());
-
             const timerEl = popup.querySelector("#maint-timer");
             if (timerEl) {
               const updateTimer = () => {
@@ -249,45 +246,22 @@ export default function Login() {
             ${modalStyles}
             <div class="enterprise-modal">
               <div class="enterprise-left" style="background: linear-gradient(135deg, #991b1b 0%, #dc2626 100%);">
-                <div style="position: absolute; top: -30px; left: -30px; width: 150px; height: 150px; background: rgba(255,255,255,0.05); border-radius: 50%;"></div>
-                
                 <div style="position: relative; z-index: 10;">
-                  <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);">
-                    <i class="fa-solid fa-ban"></i>
-                  </div>
+                  <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);"><i class="fa-solid fa-ban"></i></div>
                   <h2 style="font-size: 28px; font-weight: 900; margin: 0 0 12px 0; line-height: 1.2; letter-spacing: -0.5px;">Clearance<br/>Revoked</h2>
                   <p style="font-size: 14px; color: #fee2e2; font-weight: 500; margin: 0; line-height: 1.5;">Permanent System Deactivation</p>
                 </div>
-                
-                <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 1px;">
-                   Status: Terminated
-                </div>
+                <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #fca5a5; text-transform: uppercase; letter-spacing: 1px;">Status: Terminated</div>
               </div>
-              
               <div class="enterprise-right">
                 <div>
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;">
-                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></span>
-                    <span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Security Notice</span>
-                  </div>
-                  <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; font-weight: 500;">
-                    Your account has been permanently deactivated from the Zen-Tech Enterprise Matrix due to severe policy violations. All access rights are irrevocably terminated.
-                  </p>
-
-                  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #ef4444; border-radius: 8px; padding: 20px;">
-                    <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Violation Log</span>
-                    <span style="display: block; font-size: 15px; font-weight: 700; color: #0f172a;">${profile.ban_reason || "Administrative Decision"}</span>
-                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.5);"></span><span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Security Notice</span></div>
+                  <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 32px 0; font-weight: 500;">Your account has been permanently deactivated from the Zen-Tech Enterprise Matrix due to severe policy violations. All access rights are irrevocably terminated.</p>
+                  <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #ef4444; border-radius: 8px; padding: 20px;"><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Violation Log</span><span style="display: block; font-size: 15px; font-weight: 700; color: #0f172a;">${profile.ban_reason || "Administrative Decision"}</span></div>
                 </div>
-
-                <div style="margin-top: 32px; text-align: right;">
-                   <button id="close-ban-btn" class="action-btn" style="background: #dc2626; color: white; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);">
-                      Acknowledge
-                   </button>
-                </div>
+                <div style="margin-top: 32px; text-align: right;"><button id="close-ban-btn" class="action-btn" style="background: #dc2626; color: white; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);">Acknowledge</button></div>
               </div>
-            </div>
-          `,
+            </div>`,
           didOpen: () => {
             const popup = Swal.getPopup();
             const closeBtn = popup.querySelector("#close-ban-btn");
@@ -301,7 +275,6 @@ export default function Login() {
 
       //Temparory suspension script begans here
       if (profile.ban_status === "temporary") {
-        // Strip UTC offsets for exact local time parsing
         const rawBanEnd = profile.ban_until.replace(/(Z|[+-]\d{2}:\d{2})$/, "");
         const now = new Date();
         const banEnd = new Date(rawBanEnd);
@@ -318,63 +291,31 @@ export default function Login() {
               ${modalStyles}
               <div class="enterprise-modal">
                 <div class="enterprise-left" style="background: linear-gradient(135deg, #ea580c 0%, #9a3412 100%);">
-                  <div style="position: absolute; top: -30px; left: -30px; width: 150px; height: 150px; background: rgba(255,255,255,0.05); border-radius: 50%;"></div>
-                  
                   <div style="position: relative; z-index: 10;">
-                    <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);">
-                      <i class="fa-solid fa-lock"></i>
-                    </div>
+                    <div style="width: 56px; height: 56px; background: rgba(255,255,255,0.1); backdrop-filter: blur(8px); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,0.2);"><i class="fa-solid fa-lock"></i></div>
                     <h2 style="font-size: 28px; font-weight: 900; margin: 0 0 12px 0; line-height: 1.2; letter-spacing: -0.5px;">Account<br/>Suspended</h2>
                     <p style="font-size: 14px; color: #ffedd5; font-weight: 500; margin: 0; line-height: 1.5;">Temporary Access Restriction</p>
                   </div>
-                  
-                  <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #fdba74; text-transform: uppercase; letter-spacing: 1px;">
-                     Status: Restricted
-                  </div>
+                  <div style="position: relative; z-index: 10; font-size: 12px; font-weight: 800; color: #fdba74; text-transform: uppercase; letter-spacing: 1px;">Status: Restricted</div>
                 </div>
-                
                 <div class="enterprise-right">
                   <div>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;">
-                      <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ea580c; box-shadow: 0 0 10px rgba(234,88,12,0.5);"></span>
-                      <span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Security Notice</span>
-                    </div>
-                    <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0; font-weight: 500;">
-                      Your access to the system has been temporarily suspended pending a security review.
-                    </p>
-
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #ea580c; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                      <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Reason Logged</span>
-                      <span style="display: block; font-size: 15px; font-weight: 700; color: #0f172a;">${profile.ban_reason || "System protocols have detected abnormal activities."}</span>
-                    </div>
-
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px;"><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ea580c; box-shadow: 0 0 10px rgba(234,88,12,0.5);"></span><span style="font-size: 13px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 1px;">Security Notice</span></div>
+                    <p style="color: #334155; font-size: 15px; line-height: 1.7; margin: 0 0 24px 0; font-weight: 500;">Your access to the system has been temporarily suspended pending a security review.</p>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #ea580c; border-radius: 8px; padding: 20px; margin-bottom: 24px;"><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Reason Logged</span><span style="display: block; font-size: 15px; font-weight: 700; color: #0f172a;">${profile.ban_reason || "System protocols have detected abnormal activities."}</span></div>
                     <div class="stat-box">
-                      <div>
-                        <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Unlock Date</span>
-                        <span style="display: block; font-size: 15px; font-weight: 800; color: #0f172a;">${banEnd.toLocaleDateString()}</span>
-                      </div>
-                      <div class="stat-divider">
-                        <span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Suspension Lifts In</span>
-                        <span id="ban-timer" style="display: block; font-size: 22px; font-weight: 900; color: #ea580c; font-variant-numeric: tabular-nums;">00:00:00</span>
-                      </div>
+                      <div><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Unlock Date</span><span style="display: block; font-size: 15px; font-weight: 800; color: #0f172a;">${banEnd.toLocaleDateString()}</span></div>
+                      <div class="stat-divider"><span style="display: block; font-size: 11px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Suspension Lifts In</span><span id="ban-timer" style="display: block; font-size: 22px; font-weight: 900; color: #ea580c; font-variant-numeric: tabular-nums;">00:00:00</span></div>
                     </div>
                   </div>
-
-                  <div style="margin-top: 32px; text-align: right;">
-                     <button id="close-tempban-btn" class="action-btn" style="background: #ea580c; color: white; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);">
-                        Acknowledge
-                     </button>
-                  </div>
+                  <div style="margin-top: 32px; text-align: right;"><button id="close-tempban-btn" class="action-btn" style="background: #ea580c; color: white; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);">Acknowledge</button></div>
                 </div>
-              </div>
-            `,
+              </div>`,
             didOpen: () => {
               const popup = Swal.getPopup();
-
               const closeBtn = popup.querySelector("#close-tempban-btn");
               if (closeBtn)
                 closeBtn.addEventListener("click", () => Swal.close());
-
               const timerEl = popup.querySelector("#ban-timer");
               if (timerEl) {
                 const updateTimer = () => {
@@ -391,12 +332,16 @@ export default function Login() {
           setIsLoading(false);
           return;
         } else {
-          // Ban expired naturally, clear it from the database
           await supabase
             .from("profiles")
             .update({ ban_status: "none", ban_until: null })
             .eq("id", data.session.user.id);
         }
+      }
+
+      // Permanently save TOS state locally after a successful authenticated login
+      if (!isTOSStored) {
+        localStorage.setItem("zentech_tos_agreed", "true");
       }
 
       // Successful login, redirect to dashboard page
@@ -413,7 +358,11 @@ export default function Login() {
   return (
     <div
       className="container-fluid p-0 d-flex align-items-center"
-      style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f8fafc",
+        position: "relative",
+      }}
     >
       <div className="row g-0 w-100" style={{ height: "100vh" }}>
         {/* LEFT PANEL: IMAGE */}
@@ -435,7 +384,7 @@ export default function Login() {
           className="col-md-6 col-12 d-flex flex-column"
           style={{ backgroundColor: "#ffffff" }}
         >
-          <div className="flex-grow-1 d-flex align-items-center justify-content-center px-4 px-lg-5 py-5">
+          <div className="flex-grow-1 d-flex align-items-center justify-content-center px-4 px-lg-5 py-5 overflow-auto">
             <div className="w-100" style={{ maxWidth: "480px" }}>
               <div
                 className="text-center mb-5"
@@ -457,11 +406,11 @@ export default function Login() {
               {/* Error Message Alert */}
               {errorMsg && (
                 <div
-                  className="alert alert-danger text-sm font-semibold mb-4 border-2 border-red-400 bg-red-50 text-red-800"
+                  className="alert alert-danger text-sm font-semibold mb-4 border-2 border-red-400 bg-red-50 text-red-800 rounded-lg p-3 d-flex align-items-center shadow-sm"
                   role="alert"
                 >
-                  <i className="fa-solid fa-triangle-exclamation mr-2"></i>{" "}
-                  {errorMsg}
+                  <i className="fa-solid fa-triangle-exclamation me-2 text-xl"></i>
+                  <span>{errorMsg}</span>
                 </div>
               )}
 
@@ -470,28 +419,29 @@ export default function Login() {
                   <label
                     className="form-label"
                     style={{
-                      fontWeight: "700",
-                      fontSize: "14px",
+                      fontWeight: "800",
+                      fontSize: "12px",
                       color: COLORS.textDark,
                       textTransform: "uppercase",
-                      letterSpacing: "0.5px",
+                      letterSpacing: "1px",
                     }}
                   >
                     Staff Email / ID
                   </label>
                   <input
                     type="email"
-                    className="form-control form-control-lg"
+                    className="form-control form-control-lg shadow-sm"
                     placeholder="name@ztiw.in"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     style={{
-                      padding: "16px",
-                      borderRadius: "10px",
-                      fontSize: "16px",
+                      padding: "14px 16px",
+                      borderRadius: "12px",
+                      fontSize: "15px",
                       borderColor: COLORS.border,
                       backgroundColor: "#fdfdfd",
+                      transition: "all 0.2s",
                     }}
                   />
                 </div>
@@ -500,59 +450,289 @@ export default function Login() {
                   <label
                     className="form-label"
                     style={{
-                      fontWeight: "700",
-                      fontSize: "14px",
+                      fontWeight: "800",
+                      fontSize: "12px",
                       color: COLORS.textDark,
                       textTransform: "uppercase",
-                      letterSpacing: "0.5px",
+                      letterSpacing: "1px",
                     }}
                   >
                     Password
                   </label>
                   <input
                     type="password"
-                    className="form-control form-control-lg"
+                    className="form-control form-control-lg shadow-sm"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     style={{
-                      padding: "16px",
-                      borderRadius: "10px",
-                      fontSize: "16px",
+                      padding: "14px 16px",
+                      borderRadius: "12px",
+                      fontSize: "15px",
                       borderColor: COLORS.border,
                       backgroundColor: "#fdfdfd",
+                      transition: "all 0.2s",
                     }}
                   />
                 </div>
 
+                {/* Terms and Conditions Checkbox Check */}
+                {!isTOSStored ? (
+                  <div className="d-flex align-items-start gap-2 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <input
+                      type="checkbox"
+                      id="tos-checkbox"
+                      checked={hasAgreedToTOS}
+                      onChange={(e) => setHasAgreedToTOS(e.target.checked)}
+                      style={{
+                        marginTop: "4px",
+                        cursor: "pointer",
+                        width: "16px",
+                        height: "16px",
+                        accentColor: COLORS.indigo,
+                      }}
+                    />
+                    <label
+                      htmlFor="tos-checkbox"
+                      style={{
+                        fontSize: "13px",
+                        color: COLORS.textDark,
+                        fontWeight: "500",
+                        margin: 0,
+                        cursor: "pointer",
+                      }}
+                    >
+                      I agree to the strict adherence of the{" "}
+                      <span
+                        onClick={(e) => {
+                          e.preventDefault();
+                          router.push("/tos");
+                        }}
+                        style={{
+                          color: COLORS.indigo,
+                          fontWeight: "800",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        Terms and Conditions
+                      </span>{" "}
+                      and{" "}
+                      <span
+                        onClick={(e) => {
+                          e.preventDefault();
+                          router.push("/pp");
+                        }}
+                        style={{
+                          color: COLORS.indigo,
+                          fontWeight: "800",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        Privacy Policy
+                      </span>
+                      .
+                    </label>
+                  </div>
+                ) : (
+                  <div className="mb-4 text-center">
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: COLORS.textMuted,
+                        fontWeight: "600",
+                        margin: 0,
+                      }}
+                    >
+                      <i className="fa-solid fa-shield-check text-emerald-500 mr-1"></i>{" "}
+                      You have permanently agreed to the{" "}
+                      <span
+                        onClick={() => router.push("/tos")}
+                        style={{
+                          color: COLORS.indigo,
+                          fontWeight: "700",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Terms Of Service
+                      </span>{" "}
+                      &{" "}
+                      <span
+                        onClick={() => router.push("/pp")}
+                        style={{
+                          color: COLORS.indigo,
+                          fontWeight: "700",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Privacy Policy
+                      </span>
+                      .
+                    </p>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   className="btn btn-lg w-100 d-flex align-items-center justify-content-center"
-                  disabled={isLoading}
+                  disabled={isLoading || !hasAgreedToTOS}
                   style={{
-                    padding: "16px",
-                    fontWeight: "700",
-                    borderRadius: "10px",
+                    padding: "14px",
+                    fontWeight: "800",
+                    fontSize: "15px",
+                    borderRadius: "12px",
                     border: "none",
                     color: COLORS.textLight,
+                    textTransform: "uppercase",
+                    letterSpacing: "1px",
                     transition: "all 0.3s ease",
-                    background: isLoading
-                      ? `linear-gradient(135deg, ${COLORS.border} 0%, #a1a1a1 100%)`
-                      : `linear-gradient(135deg, ${COLORS.teal} 0%, ${COLORS.indigo} 100%)`,
-                    boxShadow: isLoading
-                      ? "none"
-                      : "0 5px 15px rgba(67, 56, 202, 0.4)",
-                    cursor: isLoading ? "not-allowed" : "pointer",
+                    background:
+                      isLoading || !hasAgreedToTOS
+                        ? `linear-gradient(135deg, ${COLORS.border} 0%, #a1a1a1 100%)`
+                        : `linear-gradient(135deg, ${COLORS.teal} 0%, ${COLORS.indigo} 100%)`,
+                    boxShadow:
+                      isLoading || !hasAgreedToTOS
+                        ? "none"
+                        : "0 8px 20px rgba(67, 56, 202, 0.3)",
+                    cursor:
+                      isLoading || !hasAgreedToTOS ? "not-allowed" : "pointer",
+                    transform:
+                      isLoading || !hasAgreedToTOS
+                        ? "none"
+                        : "translateY(-1px)",
                   }}
                 >
-                  {isLoading ? "Authenticating Server..." : "Secure Login"}
+                  {isLoading ? "Authenticating Matrix..." : "Secure Access"}
                 </button>
               </form>
+
+              {/* Copyright Footer */}
+              <div className="text-center mt-5">
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: COLORS.border,
+                    fontWeight: "800",
+                    textTransform: "uppercase",
+                    letterSpacing: "1.5px",
+                    margin: 0,
+                  }}
+                >
+                  T-Service Global Group &copy; 2026
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Floating Cookie Consent Banner */}
+      {showCookieBanner && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            background: "#ffffff",
+            padding: "20px 24px",
+            borderRadius: "16px",
+            boxShadow: "0 20px 40px -10px rgba(0,0,0,0.3)",
+            border: `1px solid ${COLORS.border}`,
+            display: "flex",
+            alignItems: "center",
+            gap: "24px",
+            maxWidth: "700px",
+            width: "90%",
+            animation: "slideUp 0.5s ease-out forwards",
+          }}
+        >
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `@keyframes slideUp { from { bottom: -100px; opacity: 0; } to { bottom: 24px; opacity: 1; } }`,
+            }}
+          />
+          <div style={{ flex: 1 }}>
+            <h4
+              style={{
+                fontSize: "15px",
+                fontWeight: "800",
+                color: COLORS.textDark,
+                margin: "0 0 6px 0",
+              }}
+            >
+              <i className="fa-solid fa-cookie-bite mr-2 text-amber-500"></i>{" "}
+              Cookie Consent
+            </h4>
+            <p
+              style={{
+                fontSize: "13px",
+                color: COLORS.textMuted,
+                margin: 0,
+                lineHeight: 1.5,
+                fontWeight: "500",
+              }}
+            >
+              We use necessary cookies to ensure the secure functioning of the
+              Zen-Tech Staff Portal.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "12px", flexShrink: 0 }}>
+            <button
+              onClick={handleCookieReject}
+              style={{
+                padding: "10px 16px",
+                fontSize: "12px",
+                fontWeight: "800",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                borderRadius: "8px",
+                border: `1px solid ${COLORS.border}`,
+                background: "#f8fafc",
+                color: COLORS.textMuted,
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.background = "#f1f5f9";
+                e.currentTarget.style.color = COLORS.textDark;
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.background = "#f8fafc";
+                e.currentTarget.style.color = COLORS.textMuted;
+              }}
+            >
+              Reject All
+            </button>
+            <button
+              onClick={handleCookieAccept}
+              style={{
+                padding: "10px 16px",
+                fontSize: "12px",
+                fontWeight: "800",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                borderRadius: "8px",
+                border: "none",
+                background: COLORS.indigo,
+                color: "#ffffff",
+                cursor: "pointer",
+                boxShadow: "0 4px 10px rgba(67, 56, 202, 0.3)",
+                transition: "all 0.2s",
+              }}
+              onMouseOver={(e) =>
+                (e.currentTarget.style.background = COLORS.indigoDark)
+              }
+              onMouseOut={(e) =>
+                (e.currentTarget.style.background = COLORS.indigo)
+              }
+            >
+              Accept Cookies
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
