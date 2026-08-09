@@ -401,13 +401,15 @@ export default function ZenTechDashboard() {
             })
             .eq("id", 1);
           setSystemSettings({ ...systemSettings, is_maintenance_mode: false });
-          await supabase.from("activity_logs").insert([
-            {
-              actor_name: userProfile.full_name,
-              actor_role: userProfile.role,
-              action_description: `Disabled System Maintenance Mode`,
-            },
-          ]);
+          await supabase
+            .from("activity_logs")
+            .insert([
+              {
+                actor_name: userProfile.full_name,
+                actor_role: userProfile.role,
+                action_description: `Disabled System Maintenance Mode`,
+              },
+            ]);
           Swal.fire(
             "Online",
             "The system is now live for all users.",
@@ -435,7 +437,8 @@ export default function ZenTechDashboard() {
       confirmButtonColor: "#e11d48",
       preConfirm: () => {
         const msg = document.getElementById("maint-msg").value;
-        const time = document.getElementById("maint-time").value;
+        const timeRaw = document.getElementById("maint-time").value;
+        const time = timeRaw ? `${timeRaw}:00+05:30` : null; // Force IST
         if (!msg) Swal.showValidationMessage("A display message is required.");
         return { msg, time };
       },
@@ -457,13 +460,15 @@ export default function ZenTechDashboard() {
           maintenance_message: formValues.msg,
           maintenance_end_time: formValues.time,
         });
-        await supabase.from("activity_logs").insert([
-          {
-            actor_name: userProfile.full_name,
-            actor_role: userProfile.role,
-            action_description: `Activated System Maintenance Mode. Protocol: ${formValues.msg}`,
-          },
-        ]);
+        await supabase
+          .from("activity_logs")
+          .insert([
+            {
+              actor_name: userProfile.full_name,
+              actor_role: userProfile.role,
+              action_description: `Activated System Maintenance Mode. Protocol: ${formValues.msg}`,
+            },
+          ]);
         Swal.fire(
           "Locked Down",
           "Maintenance mode is now active. All operative sessions terminated.",
@@ -786,13 +791,15 @@ export default function ZenTechDashboard() {
         .single();
 
       if (!data) {
-        const { error } = await supabase.from("direct_messages").insert([
-          {
-            channel_id: channelId,
-            user1_id: userProfile.id,
-            user2_id: targetUserId,
-          },
-        ]);
+        const { error } = await supabase
+          .from("direct_messages")
+          .insert([
+            {
+              channel_id: channelId,
+              user1_id: userProfile.id,
+              user2_id: targetUserId,
+            },
+          ]);
         if (error) {
           Swal.fire("Error", "Action blocked.", "error");
           return;
@@ -1015,14 +1022,16 @@ export default function ZenTechDashboard() {
   const sendSticker = async (base64String) => {
     try {
       setShowStickerPicker(false);
-      const { error } = await supabase.from("chats").insert([
-        {
-          channel: activeChatChannel,
-          sender_id: userProfile.id,
-          media_url: base64String,
-          media_type: "sticker",
-        },
-      ]);
+      const { error } = await supabase
+        .from("chats")
+        .insert([
+          {
+            channel: activeChatChannel,
+            sender_id: userProfile.id,
+            media_url: base64String,
+            media_type: "sticker",
+          },
+        ]);
       if (error) Swal.fire("Sticker Error", error.message, "error");
       else fetchChatMessages();
     } catch (err) {}
@@ -1381,13 +1390,15 @@ export default function ZenTechDashboard() {
               "error",
             );
           else {
-            await supabase.from("activity_logs").insert([
-              {
-                actor_name: userProfile.full_name,
-                actor_role: userProfile.role,
-                action_description: `Revoked ban for ${staff.full_name}`,
-              },
-            ]);
+            await supabase
+              .from("activity_logs")
+              .insert([
+                {
+                  actor_name: userProfile.full_name,
+                  actor_role: userProfile.role,
+                  action_description: `Revoked ban for ${staff.full_name}`,
+                },
+              ]);
             Swal.fire(
               "Restored",
               "Staff access has been reinstated.",
@@ -1447,13 +1458,15 @@ export default function ZenTechDashboard() {
           "error",
         );
       else {
-        await supabase.from("activity_logs").insert([
-          {
-            actor_name: userProfile.full_name,
-            actor_role: userProfile.role,
-            action_description: `Issued a ${formValues.type} ban to ${staff.full_name}. Reason: ${formValues.reason}`,
-          },
-        ]);
+        await supabase
+          .from("activity_logs")
+          .insert([
+            {
+              actor_name: userProfile.full_name,
+              actor_role: userProfile.role,
+              action_description: `Issued a ${formValues.type} ban to ${staff.full_name}. Reason: ${formValues.reason}`,
+            },
+          ]);
         Swal.fire("Banned", `User blocked.`, "success");
         fetchAllStaff();
       }
@@ -1498,19 +1511,23 @@ export default function ZenTechDashboard() {
           "error",
         );
       else {
-        await supabase.from("notifications").insert([
-          {
-            user_id: leadId,
-            message: `🚨 OFFICIAL WARNING ISSUED: ${reason}`,
-          },
-        ]);
-        await supabase.from("activity_logs").insert([
-          {
-            actor_name: userProfile.full_name,
-            actor_role: userProfile.role,
-            action_description: `Issued Warning #${newCount} to Team Lead ${leadName}`,
-          },
-        ]);
+        await supabase
+          .from("notifications")
+          .insert([
+            {
+              user_id: leadId,
+              message: `🚨 OFFICIAL WARNING ISSUED: ${reason}`,
+            },
+          ]);
+        await supabase
+          .from("activity_logs")
+          .insert([
+            {
+              actor_name: userProfile.full_name,
+              actor_role: userProfile.role,
+              action_description: `Issued Warning #${newCount} to Team Lead ${leadName}`,
+            },
+          ]);
         Swal.fire(
           "Warning Issued",
           `${leadName} has been officially warned. (Total: ${newCount})`,
@@ -1629,13 +1646,15 @@ export default function ZenTechDashboard() {
             fetchAllTeamsWithMembers();
             if (userProfile.role === "admin") fetchAllStaff();
             await fetchGlobalDirectory();
-            await supabase.from("activity_logs").insert([
-              {
-                actor_name: userProfile.full_name,
-                actor_role: userProfile.role,
-                action_description: `Deployed ${memberName} to ${result.value}`,
-              },
-            ]);
+            await supabase
+              .from("activity_logs")
+              .insert([
+                {
+                  actor_name: userProfile.full_name,
+                  actor_role: userProfile.role,
+                  action_description: `Deployed ${memberName} to ${result.value}`,
+                },
+              ]);
             Swal.fire(
               "Assigned!",
               `${memberName} has been deployed.`,
@@ -1745,16 +1764,18 @@ export default function ZenTechDashboard() {
       confirmButtonColor: "#4f46e5",
       cancelButtonColor: "#94a3b8",
       preConfirm: () => {
-        const desc = document.getElementById("task-desc").value,
-          priority = document.getElementById("task-priority").value,
-          deadline = document.getElementById("task-deadline").value;
+        const desc = document.getElementById("task-desc").value;
+        const priority = document.getElementById("task-priority").value;
+        const deadlineRaw = document.getElementById("task-deadline").value;
+        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null; // explicitly IST
+
         if (!desc.trim()) {
           Swal.showValidationMessage(
             "A detailed task description is required.",
           );
           return false;
         }
-        return { desc: desc.trim(), priority, deadline: deadline || null };
+        return { desc: desc.trim(), priority, deadline };
       },
     }).then(async (result) => {
       if (result.isConfirmed && result.value) {
@@ -1785,30 +1806,36 @@ export default function ZenTechDashboard() {
           }
         }
 
-        const { error: taskError } = await supabase.from("tasks").insert([
-          {
-            title: taskTitle,
-            status: "in_progress",
-            team_id: assignedTeamId || null,
-            assigned_to: memberId,
-            assigned_by_name: userProfile.full_name,
-            deadline: deadline,
-          },
-        ]);
+        const { error: taskError } = await supabase
+          .from("tasks")
+          .insert([
+            {
+              title: taskTitle,
+              status: "in_progress",
+              team_id: assignedTeamId || null,
+              assigned_to: memberId,
+              assigned_by_name: userProfile.full_name,
+              deadline: deadline,
+            },
+          ]);
         if (!taskError) {
-          await supabase.from("notifications").insert([
-            {
-              user_id: memberId,
-              message: `You have been assigned a new task by ${userProfile.full_name}: ${desc.substring(0, 40)}...${deadline ? ` (Due: ${new Date(deadline).toLocaleString()})` : ""}`,
-            },
-          ]);
-          await supabase.from("activity_logs").insert([
-            {
-              actor_name: userProfile.full_name,
-              actor_role: userProfile.role,
-              action_description: `Assigned a ${priority.toUpperCase()} directive to ${memberName}`,
-            },
-          ]);
+          await supabase
+            .from("notifications")
+            .insert([
+              {
+                user_id: memberId,
+                message: `You have been assigned a new task by ${userProfile.full_name}: ${desc.substring(0, 40)}...${deadline ? ` (Due: ${new Date(deadline).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })})` : ""}`,
+              },
+            ]);
+          await supabase
+            .from("activity_logs")
+            .insert([
+              {
+                actor_name: userProfile.full_name,
+                actor_role: userProfile.role,
+                action_description: `Assigned a ${priority.toUpperCase()} directive to ${memberName}`,
+              },
+            ]);
           Swal.fire({
             title: "Task Dispatched!",
             html: `<p style="font-size: 14px; font-weight: 500; color: #64748b;">The directive has been securely transmitted to ${memberName}.</p>`,
@@ -1856,12 +1883,13 @@ export default function ZenTechDashboard() {
       confirmButtonColor: "#f59e0b",
       background: "#ffffff",
       preConfirm: () => {
-        const title = document.getElementById("dir-title").value,
-          team = document.getElementById("dir-team").value,
-          deadline = document.getElementById("dir-deadline").value,
-          file = document.getElementById("dir-file").files[0];
+        const title = document.getElementById("dir-title").value;
+        const team = document.getElementById("dir-team").value;
+        const deadlineRaw = document.getElementById("dir-deadline").value;
+        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null; // IST lock
+        const file = document.getElementById("dir-file").files[0];
         if (!title) Swal.showValidationMessage("Title is required");
-        return { title, team, deadline: deadline || null, file };
+        return { title, team, deadline, file };
       },
     });
 
@@ -1892,32 +1920,38 @@ export default function ZenTechDashboard() {
           .getPublicUrl(fileName).data.publicUrl;
       }
 
-      const { error: taskError } = await supabase.from("tasks").insert([
-        {
-          title: formValues.title,
-          status: "in_progress",
-          team_id: teamData.id,
-          is_admin_directive: true,
-          file_url: uploadedFileUrl,
-          assigned_by_name: "System Admin",
-          assigned_to: teamData.lead_id,
-          deadline: formValues.deadline,
-        },
-      ]);
+      const { error: taskError } = await supabase
+        .from("tasks")
+        .insert([
+          {
+            title: formValues.title,
+            status: "in_progress",
+            team_id: teamData.id,
+            is_admin_directive: true,
+            file_url: uploadedFileUrl,
+            assigned_by_name: "System Admin",
+            assigned_to: teamData.lead_id,
+            deadline: formValues.deadline,
+          },
+        ]);
       if (!taskError) {
-        await supabase.from("notifications").insert([
-          {
-            user_id: teamData.lead_id,
-            message: `You have been assigned a new task by System Admin: "${formValues.title}"${formValues.deadline ? ` (Due: ${new Date(formValues.deadline).toLocaleString()})` : ""}`,
-          },
-        ]);
-        await supabase.from("activity_logs").insert([
-          {
-            actor_name: userProfile.full_name,
-            actor_role: userProfile.role,
-            action_description: `Admin Dispatched Golden Directive to ${formValues.team}: "${formValues.title}"`,
-          },
-        ]);
+        await supabase
+          .from("notifications")
+          .insert([
+            {
+              user_id: teamData.lead_id,
+              message: `You have been assigned a new task by System Admin: "${formValues.title}"${formValues.deadline ? ` (Due: ${new Date(formValues.deadline).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })})` : ""}`,
+            },
+          ]);
+        await supabase
+          .from("activity_logs")
+          .insert([
+            {
+              actor_name: userProfile.full_name,
+              actor_role: userProfile.role,
+              action_description: `Admin Dispatched Golden Directive to ${formValues.team}: "${formValues.title}"`,
+            },
+          ]);
         Swal.fire(
           "Dispatched!",
           "Golden Directive successfully assigned to the Team Lead.",
@@ -1929,6 +1963,13 @@ export default function ZenTechDashboard() {
   };
 
   const handleEditTask = async (task) => {
+    const formatLocal = (dateStr) => {
+      if (!dateStr) return "";
+      const d = new Date(dateStr);
+      const pad = (n) => n.toString().padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+
     const { value: formValues } = await Swal.fire({
       title: "Modify Assigned Task",
       html: `
@@ -1936,7 +1977,7 @@ export default function ZenTechDashboard() {
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Directive Information</label>
            <input id="edit-task-title" class="swal2-input" value="${task.title}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Task Deadline</label>
-           <input type="datetime-local" id="edit-task-deadline" class="swal2-input" value="${task.deadline ? task.deadline.slice(0, 16) : ""}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
+           <input type="datetime-local" id="edit-task-deadline" class="swal2-input" value="${formatLocal(task.deadline)}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
            <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Status</label>
            <select id="edit-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 0 0; font-size: 14px;">
              <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In Progress</option>
@@ -1951,11 +1992,16 @@ export default function ZenTechDashboard() {
       confirmButtonText: "Update Record",
       confirmButtonColor: "#4f46e5",
       preConfirm: () => {
-        const title = document.getElementById("edit-task-title").value,
-          deadline = document.getElementById("edit-task-deadline").value,
-          status = document.getElementById("edit-task-status").value;
+        const title = document.getElementById("edit-task-title").value;
+        const deadlineRaw = document.getElementById("edit-task-deadline").value;
+        const status = document.getElementById("edit-task-status").value;
+        let deadline = null;
+        if (deadlineRaw) {
+          deadline =
+            deadlineRaw.length === 16 ? `${deadlineRaw}:00+05:30` : deadlineRaw;
+        }
         if (!title) Swal.showValidationMessage("Title is required");
-        return { title, deadline: deadline || null, status };
+        return { title, deadline, status };
       },
     });
 
@@ -2125,26 +2171,30 @@ export default function ZenTechDashboard() {
     }
     const publicUrl = supabase.storage.from("reports").getPublicUrl(fileName)
       .data.publicUrl;
-    const { error: dbError } = await supabase.from("team_reports").insert([
-      {
-        team_id: teamId,
-        lead_id: userProfile.id,
-        file_name: file.name,
-        file_url: publicUrl,
-        status: "pending_approval",
-      },
-    ]);
+    const { error: dbError } = await supabase
+      .from("team_reports")
+      .insert([
+        {
+          team_id: teamId,
+          lead_id: userProfile.id,
+          file_name: file.name,
+          file_url: publicUrl,
+          status: "pending_approval",
+        },
+      ]);
 
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!dbError) {
-      await supabase.from("activity_logs").insert([
-        {
-          actor_name: userProfile.full_name,
-          actor_role: userProfile.role,
-          action_description: `Submitted a Bi-Weekly Report: "${file.name}"`,
-        },
-      ]);
+      await supabase
+        .from("activity_logs")
+        .insert([
+          {
+            actor_name: userProfile.full_name,
+            actor_role: userProfile.role,
+            action_description: `Submitted a Bi-Weekly Report: "${file.name}"`,
+          },
+        ]);
       Swal.fire(
         "Submitted!",
         "Bi-Weekly report successfully uploaded for Admin review.",
@@ -2160,19 +2210,23 @@ export default function ZenTechDashboard() {
       .update({ status: "approved" })
       .eq("id", reportId);
     if (!error) {
-      await supabase.from("notifications").insert([
-        {
-          user_id: leadId,
-          message: `✅ Admin approved your bi-weekly report for ${teamName}.`,
-        },
-      ]);
-      await supabase.from("activity_logs").insert([
-        {
-          actor_name: userProfile.full_name,
-          actor_role: userProfile.role,
-          action_description: `Approved report from ${teamName}`,
-        },
-      ]);
+      await supabase
+        .from("notifications")
+        .insert([
+          {
+            user_id: leadId,
+            message: `✅ Admin approved your bi-weekly report for ${teamName}.`,
+          },
+        ]);
+      await supabase
+        .from("activity_logs")
+        .insert([
+          {
+            actor_name: userProfile.full_name,
+            actor_role: userProfile.role,
+            action_description: `Approved report from ${teamName}`,
+          },
+        ]);
       Swal.fire("Approved", "Report marked as approved.", "success");
       fetchReports();
     }
@@ -2193,19 +2247,23 @@ export default function ZenTechDashboard() {
           .update({ status: "rejected", admin_feedback: result.value })
           .eq("id", reportId);
         if (!error) {
-          await supabase.from("notifications").insert([
-            {
-              user_id: leadId,
-              message: `❌ Admin rejected your bi-weekly report. Reason: ${result.value}`,
-            },
-          ]);
-          await supabase.from("activity_logs").insert([
-            {
-              actor_name: userProfile.full_name,
-              actor_role: userProfile.role,
-              action_description: `Rejected report from ${teamName}`,
-            },
-          ]);
+          await supabase
+            .from("notifications")
+            .insert([
+              {
+                user_id: leadId,
+                message: `❌ Admin rejected your bi-weekly report. Reason: ${result.value}`,
+              },
+            ]);
+          await supabase
+            .from("activity_logs")
+            .insert([
+              {
+                actor_name: userProfile.full_name,
+                actor_role: userProfile.role,
+                action_description: `Rejected report from ${teamName}`,
+              },
+            ]);
           Swal.fire("Rejected", "Report rejected and feedback logged.", "info");
           fetchReports();
         }
@@ -2397,7 +2455,7 @@ export default function ZenTechDashboard() {
       .join("");
 
     Swal.fire({
-      title: "WARNING Overview",
+      title: "Disciplinary Overview",
       html: `<div class="mt-4 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">${rows || '<p class="text-sm text-slate-500 font-bold">No Team Leads Found.</p>'}</div>`,
       showConfirmButton: false,
       showCloseButton: true,
@@ -2410,7 +2468,7 @@ export default function ZenTechDashboard() {
   const openLeadWarningModal = () => {
     if (userProfile.warning_count > 0) {
       Swal.fire({
-        title: "Official Warning",
+        title: "Official Disciplinary Warning",
         html: `<div style="text-align: left; background: #fff1f2; padding: 20px; border-radius: 12px; border: 1px solid #fecdd3; color: #9f1239; font-weight: 500; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);"><strong style="display: block; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #e11d48;">Reason Logged:</strong>${userProfile.warning_reason}</div>`,
         icon: "warning",
         confirmButtonColor: "#e11d48",
@@ -2420,7 +2478,7 @@ export default function ZenTechDashboard() {
     } else
       Swal.fire({
         title: "Good Standing",
-        text: "You currently have no warnings.",
+        text: "You currently have no disciplinary warnings.",
         icon: "success",
         confirmButtonColor: "#10b981",
       });
@@ -3031,7 +3089,6 @@ export default function ZenTechDashboard() {
                                         ? "You"
                                         : msg.profiles?.full_name || "Unknown"}
                                     </span>
-
                                     {!isMe &&
                                       senderTeam !== "Unassigned" &&
                                       showRoleBadgeAndColors && (
@@ -3089,7 +3146,6 @@ export default function ZenTechDashboard() {
                                     Edited
                                   </span>
                                 )}
-
                                 {isMe && readByText && (
                                   <div className="text-[10px] text-indigo-200 mt-2 text-right italic font-bold flex justify-end items-center gap-1">
                                     <i className="fa-solid fa-check-double"></i>{" "}
@@ -3214,7 +3270,6 @@ export default function ZenTechDashboard() {
                     >
                       <i className="fa-regular fa-face-smile text-lg"></i>
                     </button>
-
                     <input
                       type="file"
                       ref={chatMediaInputRef}
@@ -3230,7 +3285,6 @@ export default function ZenTechDashboard() {
                     >
                       <i className="fa-solid fa-paperclip text-lg"></i>
                     </button>
-
                     <textarea
                       ref={chatInputRef}
                       className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-900 px-2 py-3 resize-none custom-scrollbar outline-none"
@@ -3256,7 +3310,6 @@ export default function ZenTechDashboard() {
                       disabled={isSendingChat}
                       style={{ maxHeight: "120px" }}
                     />
-
                     <button
                       onClick={handleSendChatMessage}
                       disabled={
@@ -3388,7 +3441,7 @@ export default function ZenTechDashboard() {
                           </div>
                           <div>
                             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                              Warning
+                              Disciplinary
                             </p>
                             <h3 className="text-3xl font-black text-slate-900">
                               {allTeamsData.reduce((acc, team) => {
@@ -3397,6 +3450,7 @@ export default function ZenTechDashboard() {
                                   : team.profiles;
                                 return acc + (lead?.warning_count > 0 ? 1 : 0);
                               }, 0)}{" "}
+                              Warned
                             </h3>
                           </div>
                         </div>
@@ -3422,7 +3476,7 @@ export default function ZenTechDashboard() {
                           </div>
                           <div>
                             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                              Warning
+                              Disciplinary
                             </p>
                             <h3 className="text-3xl font-black text-slate-900">
                               {userProfile.warning_count || 0}/3
@@ -3513,7 +3567,6 @@ export default function ZenTechDashboard() {
                           Notifications
                         </h3>
                       </div>
-
                       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50">
                         {unreadDashboardMessages.length === 0 ? (
                           <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8">
@@ -3631,14 +3684,12 @@ export default function ZenTechDashboard() {
                             const leadProf = Array.isArray(team.profiles)
                               ? team.profiles[0]
                               : team.profiles;
-
                             return (
                               <div key={team.id} className="mb-6">
                                 <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3 px-2 flex items-center gap-2">
                                   <i className="fa-solid fa-users text-slate-300"></i>{" "}
                                   {team.name}
                                 </h4>
-
                                 {leadProf && (
                                   <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between mb-2">
                                     <div>
@@ -3682,7 +3733,6 @@ export default function ZenTechDashboard() {
                                     </div>
                                   </div>
                                 )}
-
                                 {team.team_members &&
                                 team.team_members.length > 0 ? (
                                   team.team_members.map((tm) => {
@@ -3776,7 +3826,6 @@ export default function ZenTechDashboard() {
                         />
                       </div>
                     </div>
-
                     <div className="flex gap-4 w-full md:w-auto">
                       <select
                         className="bg-slate-50 text-slate-900 border border-slate-200 text-sm font-bold rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm"
@@ -3943,7 +3992,6 @@ export default function ZenTechDashboard() {
                       const leadProf = Array.isArray(team.profiles)
                         ? team.profiles[0]
                         : team.profiles;
-
                       return (
                         <div
                           key={team.id}
@@ -4078,7 +4126,6 @@ export default function ZenTechDashboard() {
                         </div>
                       </div>
                     )}
-
                     <div
                       className={`${userProfile.role === "team_lead" ? "lg:col-span-2" : "lg:col-span-3"} bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 overflow-hidden flex flex-col transition-all w-full`}
                     >
@@ -4124,7 +4171,6 @@ export default function ZenTechDashboard() {
                                 const profData = Array.isArray(report.profiles)
                                   ? report.profiles[0]
                                   : report.profiles;
-
                                 return (
                                   <tr
                                     key={report.id}
@@ -4350,8 +4396,9 @@ export default function ZenTechDashboard() {
                                         <i className="fa-solid fa-triangle-exclamation"></i>
                                       )}
                                     {new Date(task.deadline).toLocaleString(
-                                      [],
+                                      "en-IN",
                                       {
+                                        timeZone: "Asia/Kolkata",
                                         dateStyle: "short",
                                         timeStyle: "short",
                                       },
@@ -4480,14 +4527,18 @@ export default function ZenTechDashboard() {
                             >
                               <div className="col-span-3 text-slate-500 font-semibold tracking-tight">
                                 [
-                                {new Date(log.created_at).toLocaleString([], {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  second: "2-digit",
-                                })}
+                                {new Date(log.created_at).toLocaleString(
+                                  "en-IN",
+                                  {
+                                    timeZone: "Asia/Kolkata",
+                                    year: "numeric",
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    second: "2-digit",
+                                  },
+                                )}
                                 ]
                               </div>
                               <div className="col-span-3 text-slate-900 font-bold">
