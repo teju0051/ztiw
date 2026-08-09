@@ -114,9 +114,7 @@ export default function Login() {
         return;
       }
 
-      // ====================================================================
-      // 4. MAINTENANCE BLOCKER & AUTO-EXPIRY ENGINE
-      // ====================================================================
+      // Maintainance & auto-expiry scripts begins here
       let isMaintenanceActive = settings?.is_maintenance_mode;
 
       if (isMaintenanceActive && settings?.maintenance_end_time) {
@@ -238,9 +236,7 @@ export default function Login() {
         return;
       }
 
-      // ====================================================================
-      // 5. BAN PROTOCOL CHECK - PERMANENT BAN
-      // ====================================================================
+      //Permanent ban script begans here
       if (profile.ban_status === "permanent") {
         await supabase.auth.signOut();
         Swal.fire({
@@ -303,9 +299,7 @@ export default function Login() {
         return;
       }
 
-      // ====================================================================
-      // 6. TEMPORARY SUSPENSION (NOW INCLUDES ADMIN REASON LOG)
-      // ====================================================================
+      //Temparory suspension script begans here
       if (profile.ban_status === "temporary") {
         // Strip UTC offsets for exact local time parsing
         const rawBanEnd = profile.ban_until.replace(/(Z|[+-]\d{2}:\d{2})$/, "");
@@ -405,7 +399,7 @@ export default function Login() {
         }
       }
 
-      // 7. Successful login, redirect to dashboard
+      // Successful login, redirect to dashboard page
       router.push("/dashboard");
     } catch (err) {
       console.error("Unexpected System Error:", err);

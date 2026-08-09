@@ -230,13 +230,7 @@ export default function ZTIWAILanding() {
       linkedIn: "https://www.linkedin.com/in/payal-pawar-12a72636a/",
       image: "https://i.ibb.co/p6sLqDvz/image-1.png",
     },
-    {
-      name: "Navin Chaudhary",
-      role: "AI Engineer",
-      linkedIn: "#",
-      image:
-        "https://www.image2url.com/r2/default/images/1782991136059-df2a4eab-3ae9-4f5e-84bc-e0a08bc8d099.jpg",
-    },
+
     {
       name: "Vaibhav Mahadik",
       role: "AI Engineer",
@@ -1202,10 +1196,9 @@ export default function ZTIWAILanding() {
               height: "100vh",
               width: "100%",
               position: "relative",
-              // Background Image Properties
               backgroundImage:
-                "url('https://i.pinimg.com/originals/f1/a8/3b/f1a83b3564f0e986277fb58a06565421.jpg')",
-              backgroundSize: "cover",
+                "url('https://www.image2url.com/r2/default/images/1786210028174-879371ad-0b85-4866-abe6-23ad9133703d.png')",
+              backgroundSize: "100% 100%",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
             }}
@@ -1338,9 +1331,7 @@ export default function ZTIWAILanding() {
                               paddingBottom: "12px",
                               display: "inline-block",
                             }}
-                          >
-                            Module 0{idx + 1}
-                          </div>
+                          ></div>
 
                           <h2
                             style={{
@@ -1794,133 +1785,6 @@ export default function ZTIWAILanding() {
               fontFamily: '"Inter", sans-serif',
             }}
           >
-            {/* Top Footer Grid: Branding & Core Modules */}
-            <div
-              className="row mb-5 pb-5"
-              style={{ borderBottom: "1px solid #27272a" }}
-            >
-              <div className="col-lg-4 mb-5 mb-lg-0">
-                <span
-                  style={{
-                    fontWeight: "900",
-                    fontSize: "28px",
-                    letterSpacing: "4px",
-                    color: "#ffffff",
-                  }}
-                >
-                  Z T I W
-                </span>
-                <p
-                  style={{
-                    marginTop: "24px",
-                    color: "#a1a1aa",
-                    maxWidth: "320px",
-                    lineHeight: "1.7",
-                    fontSize: "15px",
-                  }}
-                >
-                  Engineering intelligence that scales. Designed for absolute
-                  precision, high-contrast clarity, and zero layout overflow.
-                </p>
-                <a
-                  href="mailto:zentechindiaofficial@gmail.com"
-                  style={{
-                    color: "#ffffff",
-                    textDecoration: "none",
-                    fontSize: "16px",
-                    marginTop: "20px",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    borderBottom: "1px solid #3f3f46",
-                    paddingBottom: "4px",
-                  }}
-                >
-                  zentechindiaofficial@gmail.com
-                </a>
-              </div>
-
-              <div className="col-lg-8 d-flex flex-wrap justify-content-lg-end gap-5">
-                <div style={{ minWidth: "160px" }}>
-                  <h5
-                    style={{
-                      color: "#ffffff",
-                      fontSize: "12px",
-                      textTransform: "uppercase",
-                      letterSpacing: "2px",
-                      marginBottom: "24px",
-                    }}
-                  >
-                    Core Architectures
-                  </h5>
-                  <ul className="list-unstyled d-flex flex-column gap-3 m-0">
-                    {[
-                      "Business Modules",
-                      "Education Modules",
-                      "Ecosystem Modules",
-                    ].map((item) => (
-                      <li key={item}>
-                        <a
-                          href="#"
-                          style={{
-                            color: "#a1a1aa",
-                            textDecoration: "none",
-                            transition: "color 0.2s",
-                            fontSize: "15px",
-                          }}
-                          onMouseOver={(e) =>
-                            (e.target.style.color = "#ffffff")
-                          }
-                          onMouseOut={(e) => (e.target.style.color = "#a1a1aa")}
-                        >
-                          {item}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div style={{ minWidth: "160px" }}>
-                  <h5
-                    style={{
-                      color: "#ffffff",
-                      fontSize: "12px",
-                      textTransform: "uppercase",
-                      letterSpacing: "2px",
-                      marginBottom: "24px",
-                    }}
-                  >
-                    Corporate
-                  </h5>
-                  <ul className="list-unstyled d-flex flex-column gap-3 m-0">
-                    {[
-                      "About Us",
-                      "Live Projects",
-                      "Awwwards",
-                      "Recruiting",
-                    ].map((item) => (
-                      <li key={item}>
-                        <a
-                          href="#"
-                          style={{
-                            color: "#a1a1aa",
-                            textDecoration: "none",
-                            transition: "color 0.2s",
-                            fontSize: "15px",
-                          }}
-                          onMouseOver={(e) =>
-                            (e.target.style.color = "#ffffff")
-                          }
-                          onMouseOut={(e) => (e.target.style.color = "#a1a1aa")}
-                        >
-                          {item}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-
             {/* Bottom Footer: Socials, Copyright, Policies */}
             <div className="row align-items-center w-100 m-0 footer-layout">
               {/* Social Icons (Left) */}
