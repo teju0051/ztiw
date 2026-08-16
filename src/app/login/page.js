@@ -368,7 +368,7 @@ export default function Login() {
         {/* LEFT PANEL: IMAGE */}
         <div className="col-md-6 d-none d-md-block p-0">
           <img
-            src="https://img.freepik.com/premium-photo/modern-building-symbol-success-business-corporate-sector-commercial-urban_817921-727.jpg"
+            src="https://i.ibb.co/HfyzkPMw/Untitled-design.jpg"
             alt="Corporate background"
             style={{
               width: "100%",
@@ -426,7 +426,7 @@ export default function Login() {
                       letterSpacing: "1px",
                     }}
                   >
-                    Staff Email / ID
+                    Email ID
                   </label>
                   <input
                     type="email"
@@ -583,7 +583,7 @@ export default function Login() {
                     borderRadius: "12px",
                     border: "none",
                     color: COLORS.textLight,
-                    textTransform: "uppercase",
+
                     letterSpacing: "1px",
                     transition: "all 0.3s ease",
                     background:
@@ -602,7 +602,7 @@ export default function Login() {
                         : "translateY(-1px)",
                   }}
                 >
-                  {isLoading ? "Authenticating Matrix..." : "Secure Access"}
+                  {isLoading ? "Authenticating ..." : "Login"}
                 </button>
               </form>
 
@@ -612,13 +612,13 @@ export default function Login() {
                   style={{
                     fontSize: "11px",
                     color: COLORS.border,
-                    fontWeight: "800",
+                    fontWeight: "700",
                     textTransform: "uppercase",
                     letterSpacing: "1.5px",
                     margin: 0,
                   }}
                 >
-                  T-Service Global Group &copy; 2026
+                  Zen-Tech International &copy; 2023 - 2026 All Rights Reserved.
                 </p>
               </div>
             </div>

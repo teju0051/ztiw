@@ -5,8 +5,32 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import Swal from "sweetalert2";
 
+// Preset distinct colors for divisions
+const TEAM_PALETTE = [
+  "#9333ea", // Purple
+  "#0891b2", // Cyan
+  "#e11d48", // Rose
+  "#f59e0b", // Amber
+  "#10b981", // Emerald
+  "#6366f1", // Indigo
+  "#ec4899", // Pink
+  "#14b8a6", // Teal
+  "#f97316", // Orange
+  "#3b82f6", // Blue
+];
+
+const getDynamicTeamColor = (index, teamName) => {
+  if (index < TEAM_PALETTE.length) return TEAM_PALETTE[index];
+  let hash = 0;
+  for (let i = 0; i < teamName.length; i++) {
+    hash = teamName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+  return "#" + "00000".substring(0, 6 - c.length) + c;
+};
+
 // ==========================================
-// ZERO-COST WEBRTC VIDEO ENGINE (FULL SCREEN)
+// ZERO-COST WEBRTC VIDEO ENGINE
 // ==========================================
 const JitsiMeetingRoom = ({ roomName, displayName, avatarUrl, onLeave }) => {
   const containerRef = useRef(null);
@@ -70,10 +94,10 @@ const JitsiMeetingRoom = ({ roomName, displayName, avatarUrl, onLeave }) => {
   }, [isLoaded, roomName, displayName, avatarUrl]);
 
   return (
-    <div className="w-full h-full bg-slate-50 relative">
+    <div className="w-full h-full bg-slate-900 relative">
       {!isLoaded && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-800 bg-white z-10">
-          <i className="fa-solid fa-spinner fa-spin text-5xl text-indigo-600 mb-6"></i>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900 z-10">
+          <i className="fa-solid fa-spinner fa-spin text-5xl text-purple-500 mb-6"></i>
           <p className="text-sm font-bold animate-pulse tracking-widest uppercase">
             Initializing Secure WebRTC Interface...
           </p>
@@ -87,8 +111,8 @@ const JitsiMeetingRoom = ({ roomName, displayName, avatarUrl, onLeave }) => {
 export default function ZenTechDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [theme, setTheme] = useState("light"); // 'light' or 'dark'
 
   // Auth & Data State
   const [userProfile, setUserProfile] = useState(null);
@@ -128,8 +152,6 @@ export default function ZenTechDashboard() {
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [pastedImage, setPastedImage] = useState(null);
   const [pinnedMessage, setPinnedMessage] = useState(null);
-  const [showStickerPicker, setShowStickerPicker] = useState(false);
-  const [customStickers, setCustomStickers] = useState([]);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
 
@@ -139,7 +161,6 @@ export default function ZenTechDashboard() {
   const chatInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const groupAvatarInputRef = useRef(null);
-  const stickerInputRef = useRef(null);
 
   const notifiedIdsRef = useRef(new Set());
   const notifiedOverdueTasksRef = useRef(new Set());
@@ -147,6 +168,29 @@ export default function ZenTechDashboard() {
 
   // Meeting State
   const [activeMeetingRoom, setActiveMeetingRoom] = useState("");
+
+  // System Theme Configuration
+  const t = {
+    bgMain: theme === "dark" ? "bg-[#121212]" : "bg-[#F3F4F7]",
+    bgHeader: theme === "dark" ? "bg-[#0a0a0a]" : "bg-[#1E293B]",
+    bgCard: theme === "dark" ? "bg-[#1a1a1a]" : "bg-white",
+    bgCardHover: theme === "dark" ? "hover:bg-[#222222]" : "hover:bg-slate-50",
+    bgMuted: theme === "dark" ? "bg-[#222222]" : "bg-slate-50",
+    border: theme === "dark" ? "border-[#D4AF37]/20" : "border-slate-200",
+    borderHover:
+      theme === "dark" ? "hover:border-[#D4AF37]/50" : "hover:border-slate-300",
+    textMain: theme === "dark" ? "text-white" : "text-slate-900",
+    textMuted: theme === "dark" ? "text-gray-400" : "text-slate-500",
+    primaryBg: theme === "dark" ? "bg-[#D4AF37]" : "bg-purple-600",
+    primaryHover:
+      theme === "dark" ? "hover:bg-[#b5952f]" : "hover:bg-purple-700",
+    primaryText: theme === "dark" ? "text-black" : "text-white",
+    accentText: theme === "dark" ? "text-[#D4AF37]" : "text-purple-600",
+    accentBg: theme === "dark" ? "bg-[#D4AF37]/10" : "bg-purple-50",
+    navActiveBg: theme === "dark" ? "bg-[#D4AF37]/10" : "bg-purple-50/50",
+    navActiveBorder:
+      theme === "dark" ? "border-[#D4AF37]" : "border-purple-600",
+  };
 
   useEffect(() => {
     setIsMounted(true);
@@ -161,29 +205,9 @@ export default function ZenTechDashboard() {
       Notification.requestPermission();
     }
 
-    const isMobileDevice =
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent,
-      ) || window.innerWidth < 768;
-    if (isMobileDevice) {
-      alert(
-        "This ERP can only be opened on desktop/laptop devices and does not support mobile devices.",
-      );
-      router.push("/login");
-      return;
-    }
-
-    try {
-      const savedStickers = localStorage.getItem("zentech_stickers");
-      if (savedStickers) setCustomStickers(JSON.parse(savedStickers));
-    } catch (e) {
-      console.warn("Failed to load local stickers.");
-    }
-
     checkUserAndFetchProfile();
   }, []);
 
-  // Global Warn Action Trigger for SweetAlert HTML injections
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.handleWarnTeamLeadGlobal = (leadId, leadName, currentWarnings) => {
@@ -196,7 +220,6 @@ export default function ZenTechDashboard() {
     }
   }, [userProfile]);
 
-  // Heartbeat Polling: Bans, Maintenance, Deadlines & Profile Auto-Refresh
   useEffect(() => {
     if (!userProfile) return;
     const checkStatusInterval = setInterval(async () => {
@@ -244,7 +267,6 @@ export default function ZenTechDashboard() {
         }
       }
 
-      // Sync local profile warnings
       if (
         profileCheck &&
         (profileCheck.warning_count !== userProfile.warning_count ||
@@ -260,7 +282,6 @@ export default function ZenTechDashboard() {
     return () => clearInterval(checkStatusInterval);
   }, [userProfile]);
 
-  // Live Deadline Monitoring
   useEffect(() => {
     if (userProfile && tasks.length > 0) {
       tasks.forEach((task) => {
@@ -388,7 +409,7 @@ export default function ZenTechDashboard() {
         text: "This will allow all operatives to connect to the system immediately.",
         icon: "warning",
         showCancelButton: true,
-        confirmButtonColor: "#10b981",
+        confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
         confirmButtonText: "Yes, Restore Access",
       }).then(async (res) => {
         if (res.isConfirmed) {
@@ -436,7 +457,7 @@ export default function ZenTechDashboard() {
       preConfirm: () => {
         const msg = document.getElementById("maint-msg").value;
         const timeRaw = document.getElementById("maint-time").value;
-        const time = timeRaw ? `${timeRaw}:00+05:30` : null; // Force IST
+        const time = timeRaw ? `${timeRaw}:00+05:30` : null;
         if (!msg) Swal.showValidationMessage("A display message is required.");
         return { msg, time };
       },
@@ -630,6 +651,8 @@ export default function ZenTechDashboard() {
   });
 
   const getDivisionStyle = (div) => {
+    if (theme === "dark")
+      return "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/30";
     if (div === "Core AI & Backend")
       return "bg-purple-50 text-purple-700 border-purple-200";
     if (div === "Tools & Integrations")
@@ -642,19 +665,19 @@ export default function ZenTechDashboard() {
   };
 
   const getChatBubbleStyle = (team, isMe, showColors) => {
-    if (isMe)
-      return "bg-indigo-600 border-indigo-700 text-white rounded-[20px] rounded-tr-sm";
-    if (!showColors)
-      return "bg-white border-slate-200 text-slate-800 rounded-[20px] rounded-tl-sm";
+    if (isMe) return `${t.primaryBg} ${t.primaryText} rounded-lg rounded-tr-sm`;
+    if (!showColors || theme === "dark")
+      return `${t.bgMuted} ${t.textMain} ${t.border} border rounded-lg rounded-tl-sm`;
+
     if (team === "Core AI & Backend")
-      return "bg-purple-50 border-purple-200 text-slate-800 rounded-[20px] rounded-tl-sm";
+      return "bg-purple-50 border-purple-200 text-slate-800 rounded-lg rounded-tl-sm";
     if (team === "Tools & Integrations")
-      return "bg-blue-50 border-blue-200 text-slate-800 rounded-[20px] rounded-tl-sm";
+      return "bg-blue-50 border-blue-200 text-slate-800 rounded-lg rounded-tl-sm";
     if (team === "QA & Operations")
-      return "bg-rose-50 border-rose-200 text-slate-800 rounded-[20px] rounded-tl-sm";
+      return "bg-rose-50 border-rose-200 text-slate-800 rounded-lg rounded-tl-sm";
     if (team === "System Administration")
-      return "bg-slate-100 border-slate-300 text-slate-800 rounded-[20px] rounded-tl-sm";
-    return "bg-white border-slate-200 text-slate-800 rounded-[20px] rounded-tl-sm";
+      return "bg-slate-100 border-slate-300 text-slate-800 rounded-lg rounded-tl-sm";
+    return "bg-white border-slate-200 text-slate-800 rounded-lg rounded-tl-sm";
   };
 
   const getChatNameColor = (team) => {
@@ -682,7 +705,7 @@ export default function ZenTechDashboard() {
       const meta = channelMeta?.find((m) => m.channel_name === chName);
       return (
         meta?.avatar_url ||
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(chName)}&background=e0e7ff&color=4f46e5`
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(chName)}&background=e2e8f0&color=0f172a`
       );
     };
 
@@ -697,7 +720,7 @@ export default function ZenTechDashboard() {
 
     baseChannels.push({
       id: "All Teams",
-      label: "All Teams Network",
+      label: "Global Corporate Feed",
       avatar_url: getAvatar("All Teams"),
       memberIds: allUserIds,
       lead: "System Administration",
@@ -708,7 +731,7 @@ export default function ZenTechDashboard() {
     if (profile.role === "admin" || profile.role === "team_lead") {
       baseChannels.push({
         id: "Admin",
-        label: profile.role === "admin" ? "Admin Hub" : "Admin Network",
+        label: profile.role === "admin" ? "Command Center" : "Admin Network",
         avatar_url: getAvatar("Admin"),
         memberIds: allUserIds.filter(
           (id) =>
@@ -729,7 +752,7 @@ export default function ZenTechDashboard() {
         .find((p) => p.role === "team_lead");
       return {
         id: teamName,
-        label: teamName,
+        label: `${teamName} Comms`,
         avatar_url: getAvatar(teamName),
         memberIds: memberIds,
         lead: leadProfile ? leadProfile.full_name : "Unassigned",
@@ -740,16 +763,14 @@ export default function ZenTechDashboard() {
       };
     };
 
-    if (profile.role === "admin") {
-      const t1 = buildTeamChannel("Core AI & Backend");
-      const t2 = buildTeamChannel("Tools & Integrations");
-      const t3 = buildTeamChannel("QA & Operations");
-      if (t1) baseChannels.push(t1);
-      if (t2) baseChannels.push(t2);
-      if (t3) baseChannels.push(t3);
-    } else if (myTeamName && myTeamName !== "Unassigned") {
-      const t = buildTeamChannel(myTeamName);
-      if (t) baseChannels.push(t);
+    const { data: teamsList } = await supabase.from("teams").select("name");
+    if (teamsList) {
+      teamsList.forEach((t) => {
+        if (profile.role === "admin" || myTeamName === t.name) {
+          const ch = buildTeamChannel(t.name);
+          if (ch) baseChannels.push(ch);
+        }
+      });
     }
 
     if (directMessages.length > 0) {
@@ -763,7 +784,7 @@ export default function ZenTechDashboard() {
             label: otherUser.full_name,
             avatar_url:
               otherUser.avatar_url ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUser.full_name)}&background=f3f4f6&color=64748b`,
+              `https://ui-avatars.com/api/?name=${encodeURIComponent(otherUser.full_name)}&background=f1f5f9&color=475569`,
             memberIds: [profile.id, otherUserId],
             isDirect: true,
             otherUserId: otherUserId,
@@ -794,10 +815,7 @@ export default function ZenTechDashboard() {
             user2_id: targetUserId,
           },
         ]);
-        if (error) {
-          Swal.fire("Error", "Action blocked.", "error");
-          return;
-        }
+        if (error) return Swal.fire("Error", "Action blocked.", "error");
       }
 
       setShowNewChatModal(false);
@@ -836,7 +854,7 @@ export default function ZenTechDashboard() {
         text = "No messages yet",
         time = "",
         msgId = null,
-        senderAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.label)}&background=e0e7ff&color=4f46e5`;
+        senderAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(ch.label)}&background=f1f5f9&color=475569`;
 
       if (latest && latest.length > 0) {
         const msg = latest[0];
@@ -994,41 +1012,6 @@ export default function ZenTechDashboard() {
 
   const removePastedImage = () => setPastedImage(null);
 
-  const handleAddSticker = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const b64 = event.target.result;
-      const updatedStickers = [...customStickers, b64];
-      setCustomStickers(updatedStickers);
-      try {
-        localStorage.setItem(
-          "zentech_stickers",
-          JSON.stringify(updatedStickers),
-        );
-      } catch (e) {}
-      setShowStickerPicker(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const sendSticker = async (base64String) => {
-    try {
-      setShowStickerPicker(false);
-      const { error } = await supabase.from("chats").insert([
-        {
-          channel: activeChatChannel,
-          sender_id: userProfile.id,
-          media_url: base64String,
-          media_type: "sticker",
-        },
-      ]);
-      if (error) Swal.fire("Sticker Error", error.message, "error");
-      else fetchChatMessages();
-    } catch (err) {}
-  };
-
   const handleLinkWarning = (e, url) => {
     e.preventDefault();
     Swal.fire({
@@ -1036,9 +1019,8 @@ export default function ZenTechDashboard() {
       text: `This link redirects to an external site. Proceed? \n\n ${url}`,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonColor: "#4f46e5",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
       confirmButtonText: "Yes, Redirect Me",
-      background: "#ffffff",
     }).then((res) => {
       if (res.isConfirmed) window.open(url, "_blank");
     });
@@ -1054,7 +1036,7 @@ export default function ZenTechDashboard() {
             key={i}
             href={part}
             onClick={(e) => handleLinkWarning(e, part)}
-            className="text-indigo-500 font-bold hover:underline break-all"
+            className={`${t.accentText} font-bold hover:underline break-all`}
           >
             {part}
           </a>
@@ -1072,6 +1054,13 @@ export default function ZenTechDashboard() {
         .select();
       if (error) Swal.fire("Error", "Error pinning: " + error.message, "error");
       else fetchChatMessages();
+    } catch (err) {}
+  };
+
+  const handleDeleteChatMessage = async (msgId) => {
+    try {
+      await supabase.from("chats").delete().eq("id", msgId);
+      fetchChatMessages();
     } catch (err) {}
   };
 
@@ -1249,27 +1238,27 @@ export default function ZenTechDashboard() {
               ? `✅ Lead - ${user.team_name || "Unassigned"}`
               : `🛠️ ${user.team_name || "AI Engineer"}`;
         return `
-         <div class="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-100">
-            <img src="${user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=f3f4f6&color=64748b`}" class="w-10 h-10 rounded-full object-cover border border-slate-200" />
-            <div class="flex flex-col text-left"><span class="text-sm font-bold text-slate-900">${user.full_name}</span><span class="text-[0.65rem] font-bold text-indigo-500 uppercase tracking-widest">${roleBadge}</span></div>
+         <div class="flex items-center gap-3 bg-white p-3 rounded-lg shadow-sm border border-slate-100 mb-2">
+            <img src="${user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=f1f5f9&color=475569`}" class="w-10 h-10 rounded-full object-cover border border-slate-200" />
+            <div class="flex flex-col text-left"><span class="text-sm font-bold text-slate-900">${user.full_name}</span><span class="text-xs font-medium text-slate-500">${roleBadge}</span></div>
          </div>`;
       })
       .join("");
 
     Swal.fire({
       html: `
-        <div class="bg-white rounded-2xl overflow-hidden border border-slate-200 mt-2 shadow-xl">
-           <div class="relative h-32 bg-slate-50 flex items-center justify-center border-b border-slate-100">
-              <img src="${activeChObj.avatar_url}" class="w-24 h-24 rounded-full object-cover border-4 border-white absolute -bottom-12 cursor-pointer shadow-sm transition-transform hover:scale-105" onclick="window.viewFullscreenAvatar('${activeChObj.avatar_url}')" title="View Fullscreen" />
-              ${activeChObj.canEdit ? `<button onclick="document.getElementById('hiddenGroupAvatarUploader').click()" class="absolute right-3 top-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 p-2 rounded-xl transition-colors shadow-sm" title="Change Group Photo"><i class="fa-solid fa-camera"></i></button>` : ""}
+        <div class="bg-white rounded-lg overflow-hidden border border-slate-200 mt-2 shadow-sm">
+           <div class="relative h-24 bg-slate-100 flex items-center justify-center border-b border-slate-200">
+              <img src="${activeChObj.avatar_url}" class="w-20 h-20 rounded-full object-cover border-4 border-white absolute -bottom-10 cursor-pointer shadow-sm" onclick="window.viewFullscreenAvatar('${activeChObj.avatar_url}')" title="View Fullscreen" />
+              ${activeChObj.canEdit ? `<button onclick="document.getElementById('hiddenGroupAvatarUploader').click()" class="absolute right-3 top-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 p-1.5 rounded-md transition-colors shadow-sm" title="Change Group Photo"><i class="fa-solid fa-camera"></i></button>` : ""}
            </div>
-           <div class="pt-16 pb-4 text-center border-b border-slate-100 bg-white">
-              <h2 class="text-xl font-black text-slate-900">${activeChObj.label}</h2>
-              <p class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-1">${activeChObj.isDirect ? "Direct Message" : `Group Network · ${activeChObj.memberIds.length} Staffs`}</p>
+           <div class="pt-12 pb-4 text-center border-b border-slate-100 bg-white">
+              <h2 class="text-lg font-bold text-slate-900">${activeChObj.label}</h2>
+              <p class="text-xs font-medium text-slate-500 mt-1">${activeChObj.isDirect ? "Direct Message" : `Group Network · ${activeChObj.memberIds.length} Members`}</p>
            </div>
            <div class="text-left px-5 py-5 bg-slate-50/50">
-              <h3 class="text-[0.65rem] font-extrabold text-slate-400 uppercase tracking-widest mb-3 px-1">Participants Directory</h3>
-              <div class="max-h-60 overflow-y-auto space-y-2 custom-scrollbar pr-2">${membersHtml}</div>
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 px-1">Directory</h3>
+              <div class="max-h-60 overflow-y-auto custom-scrollbar pr-2">${membersHtml}</div>
            </div>
         </div>
       `,
@@ -1283,10 +1272,11 @@ export default function ZenTechDashboard() {
 
   const handleViewStaffTasks = async (staffId, staffName, ztId) => {
     Swal.fire({
-      title: "Retrieving Telemetry...",
+      title: "Retrieving Records...",
       allowOutsideClick: false,
       didOpen: () => Swal.showLoading(),
-      background: "#ffffff",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
     });
     const { data: staffTasks, error } = await supabase
       .from("tasks")
@@ -1294,43 +1284,37 @@ export default function ZenTechDashboard() {
       .eq("assigned_to", staffId)
       .order("created_at", { ascending: false })
       .range(0, 9);
-    if (error) {
-      Swal.fire(
-        "Database Error",
-        "The 'deadline' column is missing from your tasks table. Please add it via the Supabase dashboard.",
-        "error",
-      );
-      return;
-    }
 
     let taskHtml = `<div style="text-align: left; max-height: 350px; overflow-y: auto;" class="custom-scrollbar pr-2">`;
     if (!staffTasks || staffTasks.length === 0)
-      taskHtml += `<div style="text-align: center; padding: 20px; color: #64748b; font-size: 13px; font-weight: 600;">No active or completed tasks assigned to this operative.</div>`;
+      taskHtml += `<div style="text-align: center; padding: 20px; font-size: 13px; font-weight: 500;">No active or completed tasks assigned to this operative.</div>`;
     else {
-      taskHtml += `<div style="display: flex; flex-direction: column; gap: 10px;">`;
+      taskHtml += `<div style="display: flex; flex-direction: column; gap: 8px;">`;
       staffTasks.forEach((t) => {
         let bg = "#fef3c7",
-          col = "#a16207";
+          col = "#d97706";
         if (t.status === "completed" || t.status === "approved") {
           bg = "#dcfce7";
-          col = "#15803d";
+          col = "#16a34a";
         } else if (t.status === "rejected") {
           bg = "#fee2e2";
-          col = "#b91c1c";
+          col = "#dc2626";
         } else if (
           t.status === "pending_completion_approval" ||
           t.status === "pending_approval"
         ) {
           bg = "#f3e8ff";
-          col = "#7e22ce";
+          col = "#9333ea";
+        } else if (t.status === "in_progress") {
+          bg = "#e0e7ff";
+          col = "#4f46e5";
         }
-
         taskHtml += `
-          <div style="padding: 12px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-            <p style="font-weight: 700; font-size: 14px; color: #0f172a; margin: 0 0 6px 0;">${t.title}</p>
+          <div style="padding: 10px 12px; background: ${theme === "dark" ? "#222" : "#ffffff"}; border: 1px solid ${theme === "dark" ? "#333" : "#e2e8f0"}; border-radius: 6px;">
+            <p style="font-weight: 600; font-size: 13px; margin: 0 0 6px 0;">${t.title}</p>
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="padding: 4px 8px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; background: ${bg}; color: ${col};">${t.status.replace(/_/g, " ")}</span>
-              <span style="font-size: 11px; color: #94a3b8; font-weight: 600;">Due: ${t.deadline ? new Date(t.deadline).toLocaleDateString() : "None"}</span>
+              <span style="padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; background: ${bg}; color: ${col}; border: 1px solid ${bg}">${t.status.replace(/_/g, " ")}</span>
+              <span style="font-size: 11px; font-weight: 500;">Due: ${t.deadline ? new Date(t.deadline).toLocaleDateString() : "None"}</span>
             </div>
           </div>`;
       });
@@ -1338,12 +1322,13 @@ export default function ZenTechDashboard() {
     }
     taskHtml += `</div>`;
     Swal.fire({
-      title: `<div style="font-size: 20px; font-weight: 900; color: #0f172a;">${staffName}</div><div style="font-size: 12px; color: #64748b; font-family: monospace; margin-top: 4px;">ID: ${ztId}</div>`,
+      title: `<div style="font-size: 18px; font-weight: 700; text-align:left;">${staffName}</div><div style="font-size: 12px; text-align:left; margin-top: 2px;">ID: ${ztId}</div>`,
       html: taskHtml,
-      confirmButtonText: "Close Window",
-      confirmButtonColor: "#4f46e5",
+      confirmButtonText: "Close",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
       width: "500px",
-      background: "#f8fafc",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
     });
   };
 
@@ -1361,8 +1346,7 @@ export default function ZenTechDashboard() {
         icon: "warning",
         showCancelButton: true,
         confirmButtonText: "Yes, Unban",
-        confirmButtonColor: "#10b981",
-        background: "#ffffff",
+        confirmButtonColor: "#16a34a",
       }).then(async (result) => {
         if (result.isConfirmed) {
           const { data: updatedData, error } = await supabase
@@ -1406,16 +1390,15 @@ export default function ZenTechDashboard() {
       title: `Ban ${staff.full_name}`,
       html: `
         <div style="text-align: left; font-size: 14px;">
-          <p style="margin-bottom: 15px; color: #475569;"><strong>Role:</strong> ${staff.role.replace("_", " ")}</p>
-          <label style="display: block; margin-bottom: 8px;"><input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? "disabled" : "checked"}> <span style="${isTempDisabled ? "text-decoration: line-through; color: #94a3b8;" : ""}">Temporary Ban (24 Hours)</span></label>
-          <label style="display: block; margin-bottom: 15px;"><input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? "checked" : ""}> <strong style="color: #b91c1c;">Permanent Ban</strong> ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ""}</label>
-          <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1;"></textarea>
+          <p style="margin-bottom: 15px;"><strong>Role:</strong> ${staff.role.replace("_", " ")}</p>
+          <label style="display: block; margin-bottom: 8px;"><input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? "disabled" : "checked"}> <span style="${isTempDisabled ? "text-decoration: line-through; opacity: 0.5;" : ""}">Temporary Ban (24 Hours)</span></label>
+          <label style="display: block; margin-bottom: 15px;"><input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? "checked" : ""}> <strong style="color: #dc2626;">Permanent Ban</strong> ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ""}</label>
+          <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;"></textarea>
         </div>`,
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: "Enforce Ban",
-      confirmButtonColor: "#e11d48",
-      background: "#ffffff",
+      confirmButtonColor: "#dc2626",
       preConfirm: () => {
         const type = document.getElementById("tempBan").checked
             ? "temporary"
@@ -1466,16 +1449,15 @@ export default function ZenTechDashboard() {
       title: `Issue Warning to ${leadName}`,
       html: `
         <div style="text-align: left;">
-           <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Current Warnings: <strong style="color: #e11d48;">${currentWarnings}/3</strong></p>
-           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px;">Warning Reason</label>
-           <textarea id="warning-reason" class="swal2-textarea" placeholder="Detail the exact reason for this official warning..." style="width: 100%; height: 100px; margin: 5px 0 0 0; font-size: 14px; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1;"></textarea>
+           <p style="font-size: 13px; margin-bottom: 15px;">Current Warnings: <strong style="color: #dc2626;">${currentWarnings}/3</strong></p>
+           <label style="font-size: 12px; font-weight: 600;">Warning Reason</label>
+           <textarea id="warning-reason" class="swal2-textarea" placeholder="Detail the exact reason for this official warning..." style="width: 100%; height: 100px; margin: 5px 0 0 0; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; color:#000;"></textarea>
         </div>`,
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText:
         '<i class="fa-solid fa-gavel mr-1"></i> Issue Official Warning',
-      confirmButtonColor: "#e11d48",
-      background: "#ffffff",
+      confirmButtonColor: "#dc2626",
       preConfirm: () => {
         const reasonVal = document.getElementById("warning-reason").value;
         if (!reasonVal)
@@ -1533,11 +1515,10 @@ export default function ZenTechDashboard() {
     if (!error && data && data.length > 0) {
       Swal.fire({
         title: "⚠️ New Notification",
-        html: `<div style="text-align: left; background: #f8fafc; padding: 16px; border-radius: 8px; border-left: 4px solid #4f46e5; font-weight: 600; color: #334155;">${data[0].message}</div>`,
+        html: `<div style="text-align: left; background: #f8fafc; padding: 12px; border-radius: 6px; border-left: 4px solid #9333ea; font-weight: 500; color: #334155; font-size:14px;">${data[0].message}</div>`,
         icon: "info",
         confirmButtonText: "Acknowledge",
-        confirmButtonColor: "#4f46e5",
-        background: "#ffffff",
+        confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
       }).then(async () => {
         await supabase
           .from("notifications")
@@ -1557,18 +1538,25 @@ export default function ZenTechDashboard() {
     const { data: engineers, error } = await supabase
       .from("profiles")
       .select("id, full_name, role")
-      .eq("role", "ai_engineer");
-    if (!error && engineers)
+      .in("role", ["ai_engineer", "team_lead"]);
+    if (!error && engineers) {
+      const allAssignedOrLeading = new Set(assignedIds);
+      const { data: teams } = await supabase.from("teams").select("lead_id");
+      teams?.forEach((t) => {
+        if (t.lead_id) allAssignedOrLeading.add(t.lead_id);
+      });
+
       setUnassignedEngineers(
-        engineers.filter((eng) => !assignedIds.includes(eng.id)),
+        engineers.filter((eng) => !allAssignedOrLeading.has(eng.id)),
       );
+    }
   };
 
   const fetchAllTeamsWithMembers = async () => {
     const { data: teamsData, error } = await supabase
       .from("teams")
       .select(
-        `id, name, profiles:lead_id ( id, full_name, role, warning_count, warning_reason ), team_members ( user_id, profiles:user_id ( full_name, role ) )`,
+        `id, name, profiles:lead_id ( id, full_name, role, warning_count, warning_reason ), team_members ( user_id, profiles:user_id ( id, full_name, role ) )`,
       );
     if (!error && teamsData) setAllTeamsData(teamsData);
   };
@@ -1600,18 +1588,18 @@ export default function ZenTechDashboard() {
   };
 
   const handleAssignToTeam = async (memberId, memberName) => {
+    const options = {};
+    allTeamsData.forEach((t) => {
+      options[t.name] = t.name;
+    });
+
     Swal.fire({
       title: `Assign ${memberName}`,
       input: "select",
-      inputOptions: {
-        "Core AI & Backend": "Core AI & Backend",
-        "Tools & Integrations": "Tools & Integrations",
-        "QA & Operations": "QA & Operations",
-      },
+      inputOptions: options,
       showCancelButton: true,
-      confirmButtonText: "Deploy Engineer",
-      confirmButtonColor: "#4f46e5",
-      background: "#ffffff",
+      confirmButtonText: "Assign",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
     }).then(async (result) => {
       if (result.isConfirmed && result.value) {
         const { data: teamData } = await supabase
@@ -1639,16 +1627,171 @@ export default function ZenTechDashboard() {
             ]);
             Swal.fire(
               "Assigned!",
-              `${memberName} has been deployed.`,
+              `${memberName} has been assigned.`,
               "success",
             );
-          } else
-            Swal.fire(
-              "Error",
-              "Assignment blocked. Check database permissions.",
-              "error",
-            );
+          } else Swal.fire("Error", "Assignment blocked.", "error");
         }
+      }
+    });
+  };
+
+  const handleCreateNewTeam = async () => {
+    const candidates = {};
+    allStaff.forEach((s) => {
+      candidates[s.id] = `${s.full_name} (${s.role.replace("_", " ")})`;
+    });
+
+    const { value: formValues } = await Swal.fire({
+      title: "Create New Division",
+      html: `
+        <div style="text-align: left;">
+          <label style="font-size: 12px; font-weight: 600;">Division Name</label>
+          <input id="team-name" class="swal2-input" placeholder="e.g. Cloud Security..." style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
+          <label style="font-size: 12px; font-weight: 600;">Appoint Supervisor (Optional)</label>
+          <select id="team-lead" class="swal2-input" style="width: 100%; margin: 5px 0 0 0; font-size: 14px; border-radius: 6px; color:#000;">
+            <option value="">-- Leave Unassigned --</option>
+            ${Object.entries(candidates)
+              .map(([id, label]) => `<option value="${id}">${label}</option>`)
+              .join("")}
+          </select>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Create Division",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
+      preConfirm: () => {
+        const name = document.getElementById("team-name").value;
+        const lead = document.getElementById("team-lead").value;
+        if (!name.trim()) {
+          Swal.showValidationMessage("Division name is required.");
+          return false;
+        }
+        return { name: name.trim(), lead: lead || null };
+      },
+    });
+
+    if (formValues) {
+      const { data: newTeam, error } = await supabase
+        .from("teams")
+        .insert([{ name: formValues.name, lead_id: formValues.lead }])
+        .select()
+        .single();
+      if (error) {
+        Swal.fire("Error", error.message, "error");
+      } else {
+        if (formValues.lead) {
+          await supabase
+            .from("profiles")
+            .update({ role: "team_lead" })
+            .eq("id", formValues.lead);
+        }
+        await supabase.from("activity_logs").insert([
+          {
+            actor_name: userProfile.full_name,
+            actor_role: userProfile.role,
+            action_description: `Created new division: ${formValues.name}`,
+          },
+        ]);
+        Swal.fire("Success", `Division ${formValues.name} created!`, "success");
+        fetchAllTeamsWithMembers();
+        fetchAdminTeamsAndUnassigned();
+        fetchAllStaff();
+        const dirMap = await fetchGlobalDirectory();
+        fetchUserChannels(userProfile, dirMap);
+      }
+    }
+  };
+
+  const handleDeleteTeam = async (teamId, teamName) => {
+    Swal.fire({
+      title: `Delete ${teamName}?`,
+      text: "All members will be unassigned and returned to the available personnel pool.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, Delete Division",
+      confirmButtonColor: "#dc2626",
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        await supabase.from("team_members").delete().eq("team_id", teamId);
+        const { error } = await supabase
+          .from("teams")
+          .delete()
+          .eq("id", teamId);
+        if (error) {
+          Swal.fire("Error", error.message, "error");
+        } else {
+          await supabase.from("activity_logs").insert([
+            {
+              actor_name: userProfile.full_name,
+              actor_role: userProfile.role,
+              action_description: `Deleted division: ${teamName}`,
+            },
+          ]);
+          Swal.fire("Deleted", "Division deleted successfully.", "success");
+          fetchAllTeamsWithMembers();
+          fetchAdminTeamsAndUnassigned();
+          fetchAllStaff();
+          const dirMap = await fetchGlobalDirectory();
+          fetchUserChannels(userProfile, dirMap);
+        }
+      }
+    });
+  };
+
+  const handleReassignTeamLead = async (teamId, teamName) => {
+    const candidates = {};
+    allStaff.forEach((s) => {
+      candidates[s.id] = `${s.full_name} (${s.role.replace("_", " ")})`;
+    });
+
+    const { value: leadId } = await Swal.fire({
+      title: `Assign Lead to ${teamName}`,
+      input: "select",
+      inputOptions: candidates,
+      showCancelButton: true,
+      confirmButtonText: "Appoint Lead",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
+    });
+
+    if (leadId) {
+      await supabase.from("teams").update({ lead_id: leadId }).eq("id", teamId);
+      await supabase
+        .from("profiles")
+        .update({ role: "team_lead" })
+        .eq("id", leadId);
+      await supabase.from("team_members").delete().eq("user_id", leadId);
+      fetchAllTeamsWithMembers();
+      fetchAdminTeamsAndUnassigned();
+      fetchAllStaff();
+      fetchGlobalDirectory();
+      Swal.fire("Success", "Supervisor updated!", "success");
+    }
+  };
+
+  const handleRemoveFromTeam = async (userId, isLead, teamId) => {
+    Swal.fire({
+      title: "Remove from Team?",
+      text: "This user will be unassigned and placed in the available pool.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#dc2626",
+      confirmButtonText: "Remove",
+    }).then(async (res) => {
+      if (res.isConfirmed) {
+        if (isLead) {
+          await supabase
+            .from("teams")
+            .update({ lead_id: null })
+            .eq("id", teamId);
+        } else {
+          await supabase.from("team_members").delete().eq("user_id", userId);
+        }
+        fetchAllTeamsWithMembers();
+        fetchAdminTeamsAndUnassigned();
+        fetchAllStaff();
+        fetchGlobalDirectory();
+        Swal.fire("Removed", "User removed from team.", "success");
       }
     });
   };
@@ -1658,7 +1801,8 @@ export default function ZenTechDashboard() {
       title: "Retrieving Operative Data...",
       allowOutsideClick: false,
       didOpen: () => Swal.showLoading(),
-      background: "#ffffff",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
     });
     const { data: previousTasks, error: fetchError } = await supabase
       .from("tasks")
@@ -1667,89 +1811,80 @@ export default function ZenTechDashboard() {
       .order("created_at", { ascending: false })
       .range(0, 5);
 
-    if (fetchError)
-      return Swal.fire(
-        "Database Error",
-        "The 'deadline' column is missing from your tasks table. Please add it via the Supabase dashboard.",
-        "error",
-      );
-
     let workloadHtml = "";
     if (!previousTasks || previousTasks.length === 0)
-      workloadHtml = `<div style="text-align: center; padding: 60px 20px; color: #94a3b8;"><i class="fa-solid fa-clipboard-check" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5;"></i><div style="font-size: 14px; font-weight: 700;">No previous assignments found.</div><div style="font-size: 12px; font-weight: 500; margin-top: 4px;">Operative is fully available.</div></div>`;
+      workloadHtml = `<div style="text-align: center; padding: 40px 20px; color: #94a3b8;"><i class="fa-solid fa-clipboard-check" style="font-size: 24px; margin-bottom: 8px; opacity: 0.5;"></i><div style="font-size: 13px; font-weight: 600;">No previous assignments found.</div><div style="font-size: 12px; font-weight: 500; margin-top: 4px;">Operative is fully available.</div></div>`;
     else {
-      workloadHtml = `<div style="display: flex; flex-direction: column; gap: 12px; max-height: 380px; overflow-y: auto; padding-right: 6px;" class="custom-scrollbar">`;
+      workloadHtml = `<div style="display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; padding-right: 6px;" class="custom-scrollbar">`;
       previousTasks.forEach((t) => {
         let bg = "#fef3c7",
-          col = "#a16207";
+          col = "#d97706";
         if (t.status === "completed" || t.status === "approved") {
           bg = "#dcfce7";
-          col = "#15803d";
+          col = "#16a34a";
         } else if (t.status === "rejected") {
           bg = "#fee2e2";
-          col = "#b91c1c";
+          col = "#dc2626";
         } else if (
           t.status === "pending_completion_approval" ||
           t.status === "pending_approval"
         ) {
           bg = "#f3e8ff";
-          col = "#7e22ce";
+          col = "#9333ea";
         } else if (t.status === "in_progress") {
           bg = "#e0e7ff";
           col = "#4f46e5";
         }
-        workloadHtml += `<div style="padding: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;"><p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #1e293b; line-height: 1.4; text-align: left;">${t.title.replace(/\[.*?\]\s*/, "")}</p><div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 10px; color: #94a3b8; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;"><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i>${new Date(t.created_at).toLocaleDateString()}</span><span style="background: ${bg}; color: ${col}; padding: 4px 10px; border-radius: 6px; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">${t.status.replace(/_/g, " ")}</span></div></div>`;
+        workloadHtml += `<div style="padding: 12px; background: ${theme === "dark" ? "#222" : "#ffffff"}; border: 1px solid ${theme === "dark" ? "#333" : "#e2e8f0"}; border-radius: 6px;"><p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 600; line-height: 1.4; text-align: left;">${t.title.replace(/\[.*?\]\s*/, "")}</p><div style="display: flex; justify-content: space-between; align-items: center;"><span style="font-size: 11px; font-weight: 500;"><i class="fa-regular fa-calendar" style="margin-right: 4px;"></i>${new Date(t.created_at).toLocaleDateString()}</span><span style="background: ${bg}; color: ${col}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase;">${t.status.replace(/_/g, " ")}</span></div></div>`;
       });
       workloadHtml += `</div>`;
     }
 
     Swal.fire({
       html: `
-        <div style="display: flex; gap: 32px; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <div style="display: flex; gap: 24px; text-align: left; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
           <div style="flex: 1; display: flex; flex-direction: column;">
-            <div style="margin-bottom: 24px;">
-              <h2 style="margin: 0; font-size: 28px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px;">Task Assign Panel</h2>
-              <p style="margin: 6px 0 0 0; font-size: 14px; color: #64748b; font-weight: 600;">To: <strong style="color: #4f46e5; background: #e0e7ff; padding: 2px 8px; border-radius: 6px;">${memberName}</strong></p>
+            <div style="margin-bottom: 20px;">
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700;">Task Assign Panel</h2>
+              <p style="margin: 4px 0 0 0; font-size: 13px; color: #64748b;">To: <strong style="${theme === "dark" ? "color: #D4AF37;" : "color: #9333ea;"}">${memberName}</strong></p>
             </div>
-            <div style="background: #ffffff; padding: 0; flex-grow: 1; display: flex; flex-direction: column;">
-               <label style="display: block; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Directive Description</label>
-               <textarea id="task-desc" placeholder="Detail the exact parameters of this assignment..." style="width: 100%; box-sizing: border-box; flex-grow: 1; min-height: 140px; padding: 16px; font-size: 14px; font-weight: 500; color: #334155; border: 1px solid #cbd5e1; border-radius: 12px; resize: none; margin-bottom: 20px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#6366f1'; this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none'"></textarea>
+            <div style="padding: 0; flex-grow: 1; display: flex; flex-direction: column;">
+               <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Directive Description</label>
+               <textarea id="task-desc" placeholder="Detail the exact parameters of this assignment..." style="width: 100%; box-sizing: border-box; flex-grow: 1; min-height: 120px; padding: 10px; font-size: 13px; border: 1px solid #cbd5e1; border-radius: 6px; resize: none; margin-bottom: 16px; outline: none; color:#000;"></textarea>
                
-               <label style="display: block; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Priority Level</label>
-               <select id="task-priority" style="width: 100%; box-sizing: border-box; padding: 16px; font-size: 14px; font-weight: 700; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; cursor: pointer; background: #f8fafc; appearance: none; transition: all 0.2s; margin-bottom: 20px;" onfocus="this.style.borderColor='#6366f1'; this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none'">
+               <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Priority Level</label>
+               <select id="task-priority" style="width: 100%; box-sizing: border-box; padding: 10px; font-size: 13px; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; cursor: pointer; background: #ffffff; margin-bottom: 16px;">
                  <option value="Normal">Low Priority</option>
                  <option value="Elevated">Medium Priority</option>
                  <option value="Critical">High Priority</option>
                </select>
 
-               <label style="display: block; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;">Task Deadline (Optional)</label>
-               <input type="datetime-local" id="task-deadline" style="width: 100%; box-sizing: border-box; padding: 16px; font-size: 14px; font-weight: 700; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 12px; outline: none; transition: all 0.2s;" onfocus="this.style.borderColor='#6366f1'; this.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)'" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='none'">
+               <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Task Deadline (Optional)</label>
+               <input type="datetime-local" id="task-deadline" style="width: 100%; box-sizing: border-box; padding: 10px; font-size: 13px; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
             </div>
           </div>
-          <div style="flex: 1; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid #f1f5f9; padding-left: 32px;">
-            <div style="margin-bottom: 24px; display: flex; align-items: center;">
-               <div style="width: 32px; height: 32px; background: #f1f5f9; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 12px;"><i class="fa-solid fa-clock-rotate-left text-slate-500"></i></div>
-               <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #0f172a;">Operative History</h2>
+          <div style="flex: 1; display: flex; flex-direction: column; background: ${theme === "dark" ? "#1a1a1a" : "#f8fafc"}; border: 1px solid ${theme === "dark" ? "#333" : "#e2e8f0"}; border-radius: 8px; padding: 16px;">
+            <div style="margin-bottom: 16px; display: flex; align-items: center;">
+               <h2 style="margin: 0; font-size: 15px; font-weight: 600;">Operative History</h2>
             </div>
             <div style="flex-grow: 1;">${workloadHtml}</div>
           </div>
         </div>
       `,
-      width: "950px",
-      padding: "40px",
-      background: "#ffffff",
+      width: "800px",
+      padding: "24px",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#ffffff" : "#000000",
       showCancelButton: true,
       buttonsStyling: true,
-      confirmButtonText:
-        'Assign Task <i class="fa-solid fa-paper-plane" style="margin-left: 8px;"></i>',
+      confirmButtonText: "Assign Task",
       cancelButtonText: "Cancel",
-      confirmButtonColor: "#4f46e5",
-      cancelButtonColor: "#94a3b8",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
       preConfirm: () => {
         const desc = document.getElementById("task-desc").value;
         const priority = document.getElementById("task-priority").value;
         const deadlineRaw = document.getElementById("task-deadline").value;
-        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null; // explicitly IST
+        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null;
 
         if (!desc.trim()) {
           Swal.showValidationMessage(
@@ -1767,7 +1902,7 @@ export default function ZenTechDashboard() {
           title: "Dispatching Directive...",
           allowOutsideClick: false,
           didOpen: () => Swal.showLoading(),
-          background: "#ffffff",
+          background: theme === "dark" ? "#1a1a1a" : "#ffffff",
         });
 
         let assignedTeamId = teamId;
@@ -1814,55 +1949,51 @@ export default function ZenTechDashboard() {
           ]);
           Swal.fire({
             title: "Task Dispatched!",
-            html: `<p style="font-size: 14px; font-weight: 500; color: #64748b;">The directive has been securely transmitted to ${memberName}.</p>`,
+            html: `<p style="font-size: 14px; color: #64748b;">The directive has been securely transmitted to ${memberName}.</p>`,
             icon: "success",
-            confirmButtonColor: "#4f46e5",
+            confirmButtonColor: "#2563eb",
             background: "#ffffff",
             confirmButtonText: "Acknowledged",
           });
           fetchTasks();
-        } else
-          Swal.fire(
-            "Error",
-            "Failed to dispatch task: " + taskError.message,
-            "error",
-          );
+        } else Swal.fire("Error", "Failed to dispatch task.", "error");
       }
     });
   };
 
   const handleAdminDispatchDirective = async () => {
     const { value: formValues } = await Swal.fire({
-      title: "Announcement",
+      title: "Global Directive",
       html: `
-        <div style="text-align: left; padding: 0 10%;">
-          <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Task Title</label>
-          <input id="dir-title" class="swal2-input" placeholder="Enter High-Priority Task Title..." style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
+        <div style="text-align: left;">
+          <label style="font-size: 12px; font-weight: 600;">Task Title</label>
+          <input id="dir-title" class="swal2-input" placeholder="Enter High-Priority Task Title..." style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
           
-          <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Target Division</label>
-          <select id="dir-team" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
+          <label style="font-size: 12px; font-weight: 600;">Target Division</label>
+          <select id="dir-team" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
             <option value="Core AI & Backend">Core AI & Backend</option>
             <option value="Tools & Integrations">Tools & Integrations</option>
             <option value="QA & Operations">QA & Operations</option>
           </select>
 
-          <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Deadline (Optional)</label>
-          <input type="datetime-local" id="dir-deadline" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 8px; border: 1px solid #cbd5e1;">
+          <label style="font-size: 12px; font-weight: 600;">Deadline (Optional)</label>
+          <input type="datetime-local" id="dir-deadline" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
           
-          <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Attach Document (PDF)</label>
+          <label style="font-size: 12px; font-weight: 600;">Attach Document (PDF)</label>
           <input type="file" id="dir-file" accept="application/pdf" style="width: 100%; margin-top: 5px; font-size: 14px;">
         </div>
       `,
       focusConfirm: false,
       showCancelButton: true,
-      confirmButtonText: "Dispatch Directive",
-      confirmButtonColor: "#f59e0b",
-      background: "#ffffff",
+      confirmButtonText: "Dispatch",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
       preConfirm: () => {
         const title = document.getElementById("dir-title").value;
         const team = document.getElementById("dir-team").value;
         const deadlineRaw = document.getElementById("dir-deadline").value;
-        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null; // IST lock
+        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null;
         const file = document.getElementById("dir-file").files[0];
         if (!title) Swal.showValidationMessage("Title is required");
         return { title, team, deadline, file };
@@ -1883,7 +2014,7 @@ export default function ZenTechDashboard() {
           title: "Uploading Document...",
           allowOutsideClick: false,
           didOpen: () => Swal.showLoading(),
-          background: "#ffffff",
+          background: theme === "dark" ? "#1a1a1a" : "#ffffff",
         });
         const fileName = `${Date.now()}_${formValues.file.name.replace(/\s+/g, "_")}`;
         const { error: uploadError } = await supabase.storage
@@ -1944,12 +2075,12 @@ export default function ZenTechDashboard() {
       title: "Modify Assigned Task",
       html: `
         <div style="text-align: left;">
-           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Directive Information</label>
-           <input id="edit-task-title" class="swal2-input" value="${task.title}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
-           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Task Deadline</label>
-           <input type="datetime-local" id="edit-task-deadline" class="swal2-input" value="${formatLocal(task.deadline)}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
-           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Status</label>
-           <select id="edit-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 0 0; font-size: 14px;">
+           <label style="font-size: 12px; font-weight: 600;">Directive Information</label>
+           <input id="edit-task-title" class="swal2-input" value="${task.title}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
+           <label style="font-size: 12px; font-weight: 600;">Task Deadline</label>
+           <input type="datetime-local" id="edit-task-deadline" class="swal2-input" value="${formatLocal(task.deadline)}" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
+           <label style="font-size: 12px; font-weight: 600;">Status</label>
+           <select id="edit-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 0 0; font-size: 14px; border-radius: 6px; color:#000;">
              <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In Progress</option>
              <option value="pending_completion_approval" ${task.status === "pending_completion_approval" ? "selected" : ""}>Pending Approval</option>
              <option value="completed" ${task.status === "completed" ? "selected" : ""}>Completed</option>
@@ -1960,7 +2091,9 @@ export default function ZenTechDashboard() {
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: "Update Record",
-      confirmButtonColor: "#4f46e5",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
       preConfirm: () => {
         const title = document.getElementById("edit-task-title").value;
         const deadlineRaw = document.getElementById("edit-task-deadline").value;
@@ -1997,9 +2130,8 @@ export default function ZenTechDashboard() {
       title: "Update Task Progress",
       html: `
         <div style="text-align: left;">
-           <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Update the status of your assigned directive.</p>
-           <label style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">Current Status</label>
-           <select id="eng-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px;">
+           <label style="font-size: 12px; font-weight: 600;">Current Status</label>
+           <select id="eng-task-status" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
              <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In Progress</option>
              <option value="pending_completion_approval" ${task.status === "pending_completion_approval" ? "selected" : ""}>Mark Complete (Send for Approval)</option>
            </select>
@@ -2008,7 +2140,9 @@ export default function ZenTechDashboard() {
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: "Update Status",
-      confirmButtonColor: "#4f46e5",
+      confirmButtonColor: theme === "dark" ? "#D4AF37" : "#9333ea",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
       preConfirm: () => {
         return { status: document.getElementById("eng-task-status").value };
       },
@@ -2035,7 +2169,7 @@ export default function ZenTechDashboard() {
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Yes, Delete It",
-      confirmButtonColor: "#e11d48",
+      confirmButtonColor: "#dc2626",
     }).then(async (result) => {
       if (result.isConfirmed) {
         const { error } = await supabase
@@ -2139,6 +2273,7 @@ export default function ZenTechDashboard() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
+
     const publicUrl = supabase.storage.from("reports").getPublicUrl(fileName)
       .data.publicUrl;
     const { error: dbError } = await supabase.from("team_reports").insert([
@@ -2197,10 +2332,11 @@ export default function ZenTechDashboard() {
   const handleRejectReport = async (reportId, leadName, teamName, leadId) => {
     Swal.fire({
       title: "Reject Report",
-      html: `<input type="text" id="report-reject-reason" class="swal2-input" placeholder="Enter reason for rejection...">`,
+      html: `<input type="text" id="report-reject-reason" class="swal2-input" placeholder="Enter reason for rejection..." style="border-radius: 6px; color:#000;">`,
       confirmButtonText: "Reject Report",
-      confirmButtonColor: "#e11d48",
-      background: "#ffffff",
+      confirmButtonColor: "#dc2626",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
       preConfirm: () => document.getElementById("report-reject-reason").value,
     }).then(async (result) => {
       if (result.isConfirmed && result.value) {
@@ -2243,10 +2379,11 @@ export default function ZenTechDashboard() {
   const handleRejectCompletion = async (taskId) => {
     Swal.fire({
       title: "Reject Task Completion",
-      html: `<input type="text" id="reject-reason" class="swal2-input" placeholder="Reason for rejection...">`,
+      html: `<input type="text" id="reject-reason" class="swal2-input" placeholder="Reason for rejection..." style="border-radius: 6px; color:#000;">`,
       confirmButtonText: "Confirm Rejection",
-      confirmButtonColor: "#e11d48",
-      background: "#ffffff",
+      confirmButtonColor: "#dc2626",
+      background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+      color: theme === "dark" ? "#fff" : "#000",
       preConfirm: () => document.getElementById("reject-reason").value,
     }).then(async (result) => {
       if (result.isConfirmed && result.value) {
@@ -2262,8 +2399,77 @@ export default function ZenTechDashboard() {
     });
   };
 
+  const openAdminWarningsModal = () => {
+    const rows = allTeamsData
+      .map((team) => {
+        const lead = Array.isArray(team.profiles)
+          ? team.profiles[0]
+          : team.profiles;
+        if (!lead) return "";
+        const warnings = lead.warning_count || 0;
+        return `
+        <div class="flex items-center justify-between ${theme === "dark" ? "bg-[#1a1a1a] border-[#D4AF37]/20" : "bg-white border-slate-200"} border p-4 rounded-lg mb-2 shadow-sm transition-all group">
+           <div class="flex items-center gap-3">
+             <div class="w-10 h-10 rounded-full ${theme === "dark" ? "bg-[#222] text-[#D4AF37] border-[#D4AF37]/30" : "bg-slate-100 text-slate-700 border-slate-200"} flex items-center justify-center font-bold text-sm border">${lead.full_name.charAt(0)}</div>
+             <div class="text-left">
+               <span class="font-bold ${theme === "dark" ? "text-white" : "text-slate-900"} block text-sm">${lead.full_name}</span>
+               <span class="text-[10px] font-semibold ${theme === "dark" ? "text-gray-400 bg-[#222] border-[#333]" : "text-slate-500 bg-slate-50 border-slate-200"} px-1.5 py-0.5 rounded mt-1 inline-block border">${team.name}</span>
+             </div>
+           </div>
+           <div class="flex items-center gap-4">
+             <div class="text-right">
+               <span class="block text-[10px] font-semibold ${theme === "dark" ? "text-gray-500" : "text-slate-400"}">Warnings</span>
+               <span class="text-sm font-bold ${warnings > 0 ? "text-rose-600" : "text-emerald-600"}">${warnings} / 3</span>
+             </div>
+             <button onclick="window.handleWarnTeamLeadGlobal('${lead.id}', '${lead.full_name}', ${warnings})" class="${theme === "dark" ? "bg-[#222] text-rose-500 hover:bg-rose-900/20 border-rose-900/50" : "bg-white text-rose-600 hover:bg-rose-50 border-rose-200"} px-3 py-1.5 rounded-md text-xs font-semibold transition-all border flex items-center gap-1">
+               Warn
+             </button>
+           </div>
+        </div>`;
+      })
+      .join("");
+
+    Swal.fire({
+      title: "System Disciplinary Warnings",
+      html: `<div class="mt-4 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">${rows || `<p class="text-sm ${theme === "dark" ? "text-gray-400" : "text-slate-500"} font-medium">No Team Leads Found.</p>`}</div>`,
+      showConfirmButton: false,
+      showCloseButton: true,
+      width: "550px",
+      background: theme === "dark" ? "#121212" : "#f8fafc",
+      color: theme === "dark" ? "#ffffff" : "#0f172a",
+    });
+  };
+
+  const openLeadWarningModal = () => {
+    if (userProfile.warning_count > 0) {
+      Swal.fire({
+        title: "Disciplinary Log",
+        html: `<div style="text-align: left; background: ${theme === "dark" ? "#4c0519" : "#fff1f2"}; padding: 16px; border-radius: 6px; border: 1px solid ${theme === "dark" ? "#9f1239" : "#fecdd3"}; color: ${theme === "dark" ? "#fda4af" : "#9f1239"}; font-size: 14px;"><strong style="display: block; margin-bottom: 4px; font-size: 12px; color: ${theme === "dark" ? "#fb7185" : "#e11d48"};">Reason Logged:</strong>${userProfile.warning_reason}</div>`,
+        icon: "warning",
+        confirmButtonColor: "#dc2626",
+        confirmButtonText: "Close",
+        background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+        color: theme === "dark" ? "#ffffff" : "#0f172a",
+      });
+    } else {
+      Swal.fire({
+        title: "Good Standing",
+        text: "You currently have no disciplinary warnings.",
+        icon: "success",
+        confirmButtonColor: "#16a34a",
+        background: theme === "dark" ? "#1a1a1a" : "#ffffff",
+        color: theme === "dark" ? "#ffffff" : "#0f172a",
+      });
+    }
+  };
+
   useEffect(() => {
-    if (userProfile && (activeTab === "tasks" || activeTab === "dashboard"))
+    if (
+      userProfile &&
+      (activeTab === "tasks" ||
+        activeTab === "dashboard" ||
+        activeTab === "chat")
+    )
       fetchTasks();
     if (
       userProfile &&
@@ -2286,15 +2492,27 @@ export default function ZenTechDashboard() {
       fetchAllStaff();
   }, [userProfile, activeTab]);
 
-  const payalTasks = tasks.filter((t) => t.team === "Core AI & Backend").length;
-  const sushantTasks = tasks.filter(
-    (t) => t.team === "Tools & Integrations",
-  ).length;
-  const pratikTasks = tasks.filter((t) => t.team === "QA & Operations").length;
-  const totalAdminTasks = payalTasks + sushantTasks + pratikTasks || 1;
-  const pPct = (payalTasks / totalAdminTasks) * 100;
-  const sPct = (sushantTasks / totalAdminTasks) * 100;
-  const adminConicGradient = `conic-gradient(#6366f1 0% ${pPct}%, #3b82f6 ${pPct}% ${pPct + sPct}%, #f43f5e ${pPct + sPct}% 100%)`;
+  // Dynamic Dashboard Stats
+  const dynamicDivisionStats = allTeamsData.map((team, idx) => {
+    const count = tasks.filter((t) => t.team === team.name).length;
+    const color = getDynamicTeamColor(idx, team.name);
+    return { name: team.name, count, color };
+  });
+
+  const totalAdminTasks =
+    dynamicDivisionStats.reduce((acc, curr) => acc + curr.count, 0) || 1;
+
+  let currentPct = 0;
+  const gradientStops = dynamicDivisionStats.map((stat) => {
+    const pct = (stat.count / totalAdminTasks) * 100;
+    const stop = `${stat.color} ${currentPct}% ${currentPct + pct}%`;
+    currentPct += pct;
+    return stop;
+  });
+  const adminConicGradient =
+    gradientStops.length > 0
+      ? `conic-gradient(${gradientStops.join(", ")})`
+      : `conic-gradient(#9333ea 0% 100%)`;
 
   const successTasks = tasks.filter(
     (t) => t.status === "completed" || t.status === "approved",
@@ -2309,7 +2527,7 @@ export default function ZenTechDashboard() {
   const totalLeadTasks = successTasks + failTasks + pendingTasks || 1;
   const sucPct = (successTasks / totalLeadTasks) * 100;
   const failPct = (failTasks / totalLeadTasks) * 100;
-  const leadConicGradient = `conic-gradient(#10b981 0% ${sucPct}%, #f43f5e ${sucPct}% ${sucPct + failPct}%, #f59e0b ${sucPct + failPct}% 100%)`;
+  const leadConicGradient = `conic-gradient(#16a34a 0% ${sucPct}%, #dc2626 ${sucPct}% ${sucPct + failPct}%, #d97706 ${sucPct + failPct}% 100%)`;
 
   const totalUnreadChats = Object.values(channelPreviews).reduce(
     (sum, ch) => sum + (ch.count || 0),
@@ -2323,55 +2541,33 @@ export default function ZenTechDashboard() {
     if (userProfile && !allowedRoles.includes(userProfile.role)) return null;
     const isActive = activeTab === id;
     return (
-      <li>
-        <button
-          onClick={() => setActiveTab(id)}
-          title={isSidebarCollapsed ? label : ""}
-          className={`group w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} gap-4 px-4 py-3.5 rounded-xl text-sm font-bold transition-all duration-300 ${isActive ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-500 bg-transparent hover:bg-slate-100 hover:text-indigo-700"}`}
-        >
-          <div className="relative flex items-center justify-center">
-            <i
-              className={`${icon} text-[1.1rem] transition-colors duration-300 ${isActive ? "text-white" : "text-slate-400 group-hover:text-indigo-600"}`}
-            ></i>
-            {isSidebarCollapsed && badgeCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-rose-500 text-white text-[0.55rem] font-bold px-1.5 py-0.5 rounded-full min-w-[16px] text-center border-2 border-white shadow-sm">
-                {badgeCount}
-              </span>
-            )}
-          </div>
-          {!isSidebarCollapsed && (
-            <span
-              className={`truncate ${isActive ? "text-white" : "group-hover:text-indigo-700"}`}
-            >
-              {label}
-            </span>
-          )}
-          {!isSidebarCollapsed && badgeCount > 0 && (
-            <span className="ml-auto bg-rose-500 text-white text-[0.65rem] font-bold px-2 py-0.5 rounded-full shadow-sm">
-              {badgeCount}
-            </span>
-          )}
-        </button>
-      </li>
-    );
-  };
-
-  const SidebarHeaderDivider = ({ label }) => {
-    if (isSidebarCollapsed)
-      return (
-        <div className="h-[2px] w-8 bg-slate-100 mx-auto my-5 rounded-full"></div>
-      );
-    return (
-      <h2 className="px-4 text-[0.65rem] font-extrabold text-slate-400 mb-3 mt-6 uppercase tracking-widest">
-        {label}
-      </h2>
+      <button
+        onClick={() => setActiveTab(id)}
+        className={`flex flex-col sm:flex-row items-center gap-1 sm:gap-2 px-3 sm:px-4 py-3 text-[11px] sm:text-[13px] font-semibold border-b-2 transition-all duration-200 whitespace-nowrap outline-none ${
+          isActive
+            ? `${t.navActiveBg} ${t.navActiveBorder} ${t.accentText}`
+            : `border-transparent ${t.textMuted} ${t.textMain.replace("text-", "hover:text-")} ${t.bgCardHover}`
+        }`}
+      >
+        <i className={icon}></i>
+        <span>{label}</span>
+        {badgeCount > 0 && (
+          <span className="ml-1 sm:ml-1.5 bg-rose-500 text-white text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-full shadow-sm">
+            {badgeCount}
+          </span>
+        )}
+      </button>
     );
   };
 
   if (!isMounted || !userProfile)
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-slate-50">
-        <i className="fa-solid fa-circle-notch fa-spin text-4xl text-indigo-600"></i>
+      <div
+        className={`h-screen w-screen flex items-center justify-center ${theme === "dark" ? "bg-[#121212]" : "bg-[#F3F4F7]"}`}
+      >
+        <i
+          className={`fa-solid fa-circle-notch fa-spin text-4xl ${theme === "dark" ? "text-[#D4AF37]" : "text-purple-600"}`}
+        ></i>
       </div>
     );
 
@@ -2381,69 +2577,29 @@ export default function ZenTechDashboard() {
     activeChatChannel === "Admin" ||
     activeChObj?.isDirect;
 
-  // Open Admin Warn Panel (SweetAlert)
-  const openAdminWarningsModal = () => {
-    const rows = allTeamsData
-      .map((team) => {
-        const lead = Array.isArray(team.profiles)
-          ? team.profiles[0]
-          : team.profiles;
-        if (!lead) return "";
-        const warnings = lead.warning_count || 0;
-        return `
-        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 p-4 rounded-xl mb-3 shadow-sm hover:shadow-md transition-all group">
-           <div class="flex items-center gap-4">
-             <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shadow-inner">${lead.full_name.charAt(0)}</div>
-             <div class="text-left">
-               <span class="font-black text-slate-900 block text-sm group-hover:text-indigo-600 transition-colors">${lead.full_name}</span>
-               <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white border border-slate-200 px-1.5 py-0.5 rounded shadow-sm">${team.name}</span>
-             </div>
-           </div>
-           <div class="flex items-center gap-4">
-             <div class="text-right">
-               <span class="block text-[9px] uppercase tracking-widest font-black text-slate-400">Warnings</span>
-               <span class="text-xs font-black ${warnings > 0 ? "text-rose-600" : "text-emerald-600"}">${warnings} / 3</span>
-             </div>
-             <button onclick="window.handleWarnTeamLeadGlobal('${lead.id}', '${lead.full_name}', ${warnings})" class="bg-white text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all shadow-sm border border-rose-200 hover:border-rose-300 flex items-center gap-1">
-               <i class="fa-solid fa-triangle-exclamation"></i> Warn
-             </button>
-           </div>
-        </div>`;
-      })
-      .join("");
+  // Process chat messages by date
+  const groupedMessages = [];
+  let lastDate = null;
+  chatMessages.forEach((msg) => {
+    const msgDateObj = new Date(msg.created_at);
+    const dateStr = msgDateObj.toLocaleDateString();
+    if (dateStr !== lastDate) {
+      let label = dateStr;
+      const today = new Date().toLocaleDateString();
+      const yesterday = new Date(Date.now() - 86400000).toLocaleDateString();
+      if (dateStr === today) label = "Today";
+      else if (dateStr === yesterday) label = "Yesterday";
 
-    Swal.fire({
-      title: "Disciplinary Overview",
-      html: `<div class="mt-4 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">${rows || '<p class="text-sm text-slate-500 font-bold">No Team Leads Found.</p>'}</div>`,
-      showConfirmButton: false,
-      showCloseButton: true,
-      width: "600px",
-      background: "#ffffff",
-    });
-  };
-
-  // Open Lead Warning Details (SweetAlert)
-  const openLeadWarningModal = () => {
-    if (userProfile.warning_count > 0) {
-      Swal.fire({
-        title: "Official Disciplinary Warning",
-        html: `<div style="text-align: left; background: #fff1f2; padding: 20px; border-radius: 12px; border: 1px solid #fecdd3; color: #9f1239; font-weight: 500; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);"><strong style="display: block; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #e11d48;">Reason Logged:</strong>${userProfile.warning_reason}</div>`,
-        icon: "warning",
-        confirmButtonColor: "#e11d48",
-        confirmButtonText: "Acknowledge",
-        background: "#ffffff",
-      });
-    } else
-      Swal.fire({
-        title: "Good Standing",
-        text: "You currently have no disciplinary warnings.",
-        icon: "success",
-        confirmButtonColor: "#10b981",
-      });
-  };
+      groupedMessages.push({ type: "date", label, id: "date-" + dateStr });
+      lastDate = dateStr;
+    }
+    groupedMessages.push({ type: "msg", ...msg });
+  });
 
   return (
-    <>
+    <div
+      className={`${theme === "dark" ? "dark" : ""} h-screen w-screen flex flex-col overflow-hidden`}
+    >
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -2451,280 +2607,1185 @@ export default function ZenTechDashboard() {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        .donut-chart { border-radius: 50%; width: 140px; height: 140px; position: relative; }
-        .donut-hole { background: #ffffff; border-radius: 50%; width: 85px; height: 85px; position: absolute; top: 27.5px; left: 27.5px; display: flex; align-items: center; justify-content: center; }
+        .donut-chart { border-radius: 50%; position: relative; width: 140px; height: 140px; }
+        .donut-hole { background: ${theme === "dark" ? "#1a1a1a" : "#ffffff"}; border-radius: 50%; width: 85px; height: 85px; position: absolute; top: 27.5px; left: 27.5px; display: flex; align-items: center; justify-content: center; }
       `,
         }}
       />
 
-      <input
-        type="file"
-        accept="image/*"
-        id="hiddenGroupAvatarUploader"
-        className="hidden"
-        onChange={handleGroupAvatarUpload}
-      />
-      <input
-        type="file"
-        accept="image/*"
-        ref={avatarInputRef}
-        className="hidden"
-        onChange={handleAvatarUpload}
-      />
-
-      {activeMeetingRoom && (
-        <div className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col">
-          <div className="w-full bg-slate-800 text-white py-3 px-6 flex justify-between items-center border-b border-white/10 shadow-md">
-            <div className="flex items-center gap-3">
-              <span className="flex h-3 w-3 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-              </span>
-              <span className="font-bold text-lg tracking-wide flex items-center gap-2">
-                <i className="fa-solid fa-shield-halved text-emerald-400"></i>{" "}
-                Encrypted Feed:{" "}
-                <span className="font-mono text-slate-300 ml-1">
-                  {activeMeetingRoom}
-                </span>
-              </span>
-            </div>
-            <button
-              onClick={() => setActiveMeetingRoom("")}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold px-6 py-2.5 rounded-full shadow-lg transition-colors flex items-center"
-            >
-              <i className="fa-solid fa-phone-slash mr-2"></i> Leave Call
-            </button>
-          </div>
-          <div className="flex-1 w-full h-full relative">
-            <JitsiMeetingRoom
-              roomName={activeMeetingRoom}
-              displayName={userProfile.full_name}
-              avatarUrl={userProfile.avatar_url}
-              onLeave={() => setActiveMeetingRoom("")}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="flex h-screen overflow-hidden text-slate-900 antialiased font-sans bg-slate-50 relative w-full">
-        <aside
-          className={`${isSidebarCollapsed ? "w-24" : "w-[280px]"} bg-white border-r border-slate-200 shadow-none flex flex-col justify-between flex-shrink-0 z-40 whitespace-nowrap transition-all duration-300 ease-in-out`}
-        >
-          <div className="h-full overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar py-6">
-            <div
-              className={`px-6 flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-between"} mb-8`}
-            >
-              {!isSidebarCollapsed && (
-                <div className="flex items-center cursor-pointer transition-transform duration-300 hover:scale-105">
-                  <img
-                    src="https://i.ibb.co/v6WY6JcJ/Chat-GPT-Image-Jul-19-2026-04-02-21-PM.png"
-                    alt="Zen-Tech Network"
-                    className="h-10 w-auto object-contain drop-shadow-sm"
-                  />
-                </div>
-              )}
-              <button
-                onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                className="text-slate-400 hover:text-indigo-600 focus:outline-none p-2 rounded-xl hover:bg-indigo-50 transition-colors shrink-0"
-              >
-                <i className="fa-solid fa-bars text-xl"></i>
-              </button>
-            </div>
-
-            <div className="flex-1 px-4 space-y-2">
-              <ul className="space-y-1">
-                <NavButton
-                  id="dashboard"
-                  icon="fa-solid fa-border-all"
-                  label="Dashboard"
-                  allowedRoles={["admin", "team_lead", "ai_engineer"]}
+      {/* TOP NAVIGATION ERP LAYOUT */}
+      <div
+        className={`w-full h-full font-sans flex flex-col ${t.bgMain} ${t.textMain} transition-colors duration-300`}
+      >
+        {/* Top Header Row */}
+        <header className="bg-white/90 backdrop-blur-md shadow-sm z-40 shrink-0 border-b border-slate-200 sticky top-0 transition-all duration-300">
+          <div className="w-full mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            {/* Left Side: Logo & System Actions */}
+            <div className="flex items-center gap-4 sm:gap-6">
+              {/* Logo Area */}
+              <div className="flex items-center mr-2 sm:mr-4 shrink-0 cursor-pointer">
+                <img
+                  src="https://i.ibb.co/v6WY6JcJ/Chat-GPT-Image-Jul-19-2026-04-02-21-PM.png"
+                  alt="Brand Logo"
+                  className="h-8 sm:h-10 w-auto object-contain hover:opacity-80 transition-opacity duration-200"
                 />
-              </ul>
-              <div>
-                <SidebarHeaderDivider label="Communications" />
-                <ul className="space-y-1">
-                  <NavButton
-                    id="chat"
-                    icon="fa-solid fa-comments"
-                    label="Chats"
-                    allowedRoles={["admin", "team_lead", "ai_engineer"]}
-                    badgeCount={totalUnreadChats}
-                  />
-                </ul>
               </div>
-              {(userProfile.role === "admin" ||
-                userProfile.role === "team_lead") && (
-                <div>
-                  <SidebarHeaderDivider label="Team & Operations" />
-                  <ul className="space-y-1">
-                    <NavButton
-                      id="staff"
-                      icon="fa-solid fa-id-badge"
-                      label="Staff Directory"
-                      allowedRoles={["admin"]}
-                    />
-                    <NavButton
-                      id="team"
-                      icon="fa-solid fa-users"
-                      label="Team Management"
-                      allowedRoles={["admin", "team_lead"]}
-                    />
-                    <NavButton
-                      id="tasks"
-                      icon="fa-regular fa-square-check"
-                      label="Tasks"
-                      allowedRoles={["admin", "team_lead"]}
-                    />
-                    <NavButton
-                      id="departments"
-                      icon="fa-solid fa-building"
-                      label="Departments"
-                      allowedRoles={["admin"]}
-                    />
-                    <NavButton
-                      id="reports"
-                      icon="fa-solid fa-chart-line"
-                      label="Reports"
-                      allowedRoles={["admin", "team_lead"]}
-                    />
-                  </ul>
-                </div>
-              )}
-              <div>
-                <SidebarHeaderDivider label="Core Modules" />
-                <ul className="space-y-1">
-                  {userProfile.role === "ai_engineer" && (
-                    <NavButton
-                      id="tasks"
-                      icon="fa-solid fa-code"
-                      label="My Active Tasks"
-                      allowedRoles={["ai_engineer"]}
-                    />
-                  )}
-                  <NavButton
-                    id="ai-agents"
-                    icon="fa-solid fa-robot"
-                    label="AI Agents"
-                    allowedRoles={["admin"]}
-                  />
-                  <NavButton
-                    id="clients"
-                    icon="fa-solid fa-user-group"
-                    label="Clients"
-                    allowedRoles={["admin"]}
-                  />
-                  <NavButton
-                    id="activity-log"
-                    icon="fa-solid fa-clock-rotate-left"
-                    label="Activity Log"
-                    allowedRoles={["admin"]}
-                  />
-                </ul>
-              </div>
-            </div>
-          </div>
-          <div className="p-6">
-            <button
-              onClick={handleLogout}
-              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center" : "justify-start"} px-4 py-3 text-sm font-bold text-rose-600 bg-rose-50 border border-transparent hover:border-rose-200 hover:text-white hover:bg-rose-500 hover:shadow-sm rounded-xl transition-all duration-300`}
-            >
-              <i className="fa-solid fa-arrow-right-from-bracket text-lg"></i>
-              {!isSidebarCollapsed && (
-                <span className="ml-3">Terminate Session</span>
-              )}
-            </button>
-          </div>
-        </aside>
 
-        <main className="flex-1 flex flex-col h-screen overflow-hidden w-full relative bg-slate-50">
-          <header className="h-[72px] bg-white border-b border-slate-200 flex items-center justify-between px-6 sm:px-8 z-30 shrink-0">
-            <div className="flex items-center gap-4"></div>
-            <div className="flex items-center gap-6">
+              {/* Admin Maintenance Button */}
               {userProfile.role === "admin" && (
                 <button
                   onClick={handleMaintenanceToggle}
-                  className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border ${systemSettings?.is_maintenance_mode ? "bg-rose-600 text-white border-rose-700 animate-pulse" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:text-indigo-600"}`}
+                  className={`hidden md:flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 border shadow-sm ${
+                    systemSettings?.is_maintenance_mode
+                      ? "bg-rose-50 text-rose-600 border-rose-200 animate-pulse"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
                 >
-                  <i className="fa-solid fa-power-off"></i>{" "}
+                  <i className="fa-solid fa-power-off"></i>
                   {systemSettings?.is_maintenance_mode
-                    ? "Maintenance Active"
-                    : "System Controls"}
+                    ? "Maintenance Mode"
+                    : "System Control"}
                 </button>
               )}
-              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm cursor-default">
+
+              {/* Theme Toggle */}
+              <button
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full text-sm transition-all duration-200 border bg-white text-slate-500 border-slate-200 shadow-sm hover:bg-slate-50 hover:text-slate-800 hover:shadow"
+                title="Toggle Theme"
+              >
+                {theme === "light" ? (
+                  <i className="fa-solid fa-moon"></i>
+                ) : (
+                  <i className="fa-solid fa-sun text-amber-500"></i>
+                )}
+              </button>
+            </div>
+
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-3 sm:gap-4">
+              {/* Online Status */}
+              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 px-2.5 py-1.5 rounded-full border border-emerald-100 cursor-default shadow-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">
-                  System Live
+                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                  Online
                 </span>
               </div>
-              <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
-              <div
-                className="flex items-center gap-3 cursor-pointer group transition-all"
-                onClick={() => avatarInputRef.current.click()}
-                title="Change Avatar"
-              >
-                <div className="text-right flex flex-col justify-center hidden sm:flex">
-                  <p className="text-[13px] font-black text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">
+
+              {/* Subtle Divider */}
+              <div className="h-6 w-px bg-slate-200 hidden sm:block mx-1"></div>
+
+              {/* User Dropdown / Profile */}
+              <div className="flex items-center gap-3">
+                {/* Hidden file input required for the avatar click to work */}
+                <input
+                  type="file"
+                  ref={avatarInputRef}
+                  onChange={handleAvatarUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                {/* Name & Role */}
+                <div className="text-right hidden sm:block leading-tight">
+                  <p className="text-sm font-semibold text-slate-800 tracking-tight">
                     {userProfile.full_name}
                   </p>
-                  <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                  <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">
                     {userProfile.role.replace("_", " ")}
                   </p>
                 </div>
-                <div className="relative">
+
+                {/* Avatar Container */}
+                <div
+                  className="relative group cursor-pointer shrink-0 rounded-full border-2 border-white shadow-[0_2px_8px_-2px_rgba(0,0,0,0.1)] hover:shadow-[0_4px_12px_-2px_rgba(0,0,0,0.15)] transition-all duration-200"
+                  onClick={() => avatarInputRef.current?.click()}
+                  title="Change Profile Picture"
+                >
                   {isUploadingAvatar ? (
-                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center animate-pulse shadow-sm">
-                      <i className="fa-solid fa-spinner fa-spin text-indigo-600"></i>
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 flex items-center justify-center animate-pulse">
+                      <i className="fa-solid fa-spinner fa-spin text-slate-400 text-sm"></i>
                     </div>
                   ) : userProfile.avatar_url ? (
                     <img
                       src={userProfile.avatar_url}
                       alt="Avatar"
-                      className="w-10 h-10 rounded-full object-cover shadow-sm group-hover:opacity-90 transition-opacity border border-slate-200"
+                      className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover group-hover:opacity-90 transition-opacity"
                     />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center shadow-sm group-hover:bg-indigo-700 transition-colors">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-800 text-white font-semibold flex items-center justify-center text-sm transition-colors">
                       {userProfile.full_name.charAt(0)}
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+
+                  {/* Avatar Hover Overlay */}
+                  <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 backdrop-blur-[1px]">
                     <i className="fa-solid fa-camera text-white text-xs"></i>
                   </div>
                 </div>
               </div>
-            </div>
-          </header>
 
-          {/* DYNAMIC CONTENT AREA */}
-          {activeTab === "chat" ? (
-            /* EXACT HEIGHT STRICT BOUNDS FOR CHAT */
-            <div className="flex-1 flex gap-4 lg:gap-6 p-4 sm:p-6 lg:p-8 min-h-0 w-full overflow-hidden animate-in fade-in duration-500">
-              {/* 1-1 Chat Search Modal */}
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all duration-200 ml-1 sm:ml-0"
+                title="Logout"
+              >
+                <i className="fa-solid fa-arrow-right-from-bracket"></i>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Secondary Header Row (Tabs) */}
+        <div
+          className={`${t.bgCard} ${t.border} border-b shadow-sm shrink-0 z-30 relative transition-colors duration-300`}
+        >
+          {/* Added 'justify-start md:justify-center' to align tabs to the center safely */}
+          <div className="w-full mx-auto px-2 sm:px-4 flex items-center justify-start md:justify-center overflow-x-auto custom-scrollbar pt-1 gap-1">
+            <NavButton
+              id="dashboard"
+              icon="fa-solid fa-border-all"
+              label="Dashboard"
+              allowedRoles={["admin", "team_lead", "ai_engineer"]}
+            />
+            <NavButton
+              id="chat"
+              icon="fa-solid fa-comments"
+              label="Chats"
+              allowedRoles={["admin", "team_lead", "ai_engineer"]}
+              badgeCount={totalUnreadChats}
+            />
+            <NavButton
+              id="tasks"
+              icon="fa-regular fa-square-check"
+              label="Tasks"
+              allowedRoles={["admin", "team_lead", "ai_engineer"]}
+            />
+            <NavButton
+              id="staff"
+              icon="fa-solid fa-address-book"
+              label="Directory"
+              allowedRoles={["admin"]}
+            />
+            <NavButton
+              id="team"
+              icon="fa-solid fa-users-gear"
+              label="Team Management"
+              allowedRoles={["admin", "team_lead"]}
+            />
+            <NavButton
+              id="departments"
+              icon="fa-solid fa-building"
+              label="Divisions"
+              allowedRoles={["admin"]}
+            />
+            <NavButton
+              id="reports"
+              icon="fa-solid fa-file-invoice"
+              label="Reports"
+              allowedRoles={["admin", "team_lead"]}
+            />
+            <NavButton
+              id="activity-log"
+              icon="fa-solid fa-clock-rotate-left"
+              label="Activity Log"
+              allowedRoles={["admin"]}
+            />
+            <NavButton
+              id="ai-agents"
+              icon="fa-solid fa-robot"
+              label="AI Instances"
+              allowedRoles={["admin"]}
+            />
+            <NavButton
+              id="clients"
+              icon="fa-solid fa-handshake"
+              label="Clients"
+              allowedRoles={["admin"]}
+            />
+          </div>
+        </div>
+
+        {/* Main Content Viewport */}
+        <main className="flex-1 overflow-hidden w-full relative mx-auto">
+          {/* TAB: DASHBOARD */}
+          {activeTab === "dashboard" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-6">
+              {/* --- NEW FEATURE: PERSISTENT TASK ALERTS --- */}
+              {(userProfile.role === "team_lead" ||
+                userProfile.role === "ai_engineer") && (
+                <div className="w-full flex flex-col gap-3 z-50 shrink-0">
+                  {tasks
+                    .filter(
+                      (t) =>
+                        !["completed", "rejected", "failed"].includes(
+                          t.status?.toLowerCase(),
+                        ) && t.assigned_to === userProfile.id, // <-- Ensures they only see THEIR assigned tasks
+                    )
+                    .map((activeTask, idx) => (
+                      <div
+                        key={`alert-${activeTask.id || idx}`}
+                        className="relative w-full"
+                      >
+                        {/* Pulsing/Fading Glow Behind */}
+                        <div className="absolute inset-0 bg-red-500 blur-lg opacity-40 animate-pulse rounded-sm"></div>
+
+                        {/* Flat Horizontal Banner (Matches Reference Image Layout) */}
+                        <div className="relative bg-[#ffebe6] border border-red-200 px-4 py-3 flex items-start sm:items-center gap-3 shadow-sm rounded-sm">
+                          {/* Blue & White Tick Icon */}
+                          <div className="bg-[#0b4d5e] text-white w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 shadow-inner mt-0.5 sm:mt-0">
+                            <i className="fa-solid fa-check text-sm"></i>
+                          </div>
+
+                          {/* Text Content: Explicitly showing Title and Description */}
+                          <div className="flex flex-col sm:flex-row sm:items-center flex-wrap text-sm sm:text-[15px] text-red-900 w-full gap-1 sm:gap-2 leading-snug">
+                            <strong className="font-extrabold tracking-wide shrink-0">
+                              Task:{" "}
+                              {activeTask.title || `Task #${activeTask.id}`}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+              {/* --- END PERSISTENT TASK ALERTS --- */}
+
+              <div
+                className={`flex flex-col sm:flex-row sm:items-center justify-between pb-2 ${t.border} border-b`}
+              ></div>
+
+              {/* Lead Disciplinary Warning */}
+              {userProfile.role === "team_lead" &&
+                userProfile.warning_count >= 3 && (
+                  <div className="bg-[#FEF2F2] border-l-4 border-red-600 p-4 rounded shadow-sm flex items-start gap-3">
+                    <i className="fa-solid fa-triangle-exclamation text-red-600 mt-0.5"></i>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-bold text-red-800 uppercase tracking-wide">
+                        Critical Policy Violation
+                      </h3>
+                      <p className="text-sm text-red-700 mt-1 font-medium">
+                        YOU HAVE BROKEN RULES 3 TIMES. YOU AND YOUR TEAM ARE
+                        CURRENTLY INELIGIBLE FOR PAID INTERNSHIP STATUS.
+                      </p>
+                    </div>
+                    <button
+                      onClick={openLeadWarningModal}
+                      className="text-sm text-red-800 underline font-semibold hover:text-red-900"
+                    >
+                      View Log
+                    </button>
+                  </div>
+                )}
+
+              {/* KPI Strip */}
+              <div
+                className={`grid grid-cols-1 sm:grid-cols-2 ${userProfile.role === "ai_engineer" ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-4 w-full`}
+              >
+                <div
+                  className={`${t.bgCard} p-5 rounded-lg border ${t.border} ${t.borderHover} shadow-sm flex flex-col justify-between group transition-colors`}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider ${t.textMuted}`}
+                    >
+                      Total Active Tasks
+                    </span>
+                    <i
+                      className={`fa-solid fa-layer-group ${theme === "dark" ? "text-gray-600 group-hover:text-[#D4AF37]" : "text-slate-300 group-hover:text-purple-500"} transition-colors`}
+                    ></i>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <h2 className="text-3xl font-bold">{tasks.length}</h2>
+                  </div>
+                </div>
+
+                <div
+                  className={`${t.bgCard} p-5 rounded-lg border ${t.border} ${t.borderHover} shadow-sm flex flex-col justify-between group transition-colors`}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider ${t.textMuted}`}
+                    >
+                      Pending Approvals
+                    </span>
+                    <i
+                      className={`fa-solid fa-clipboard-list ${theme === "dark" ? "text-gray-600 group-hover:text-[#D4AF37]" : "text-slate-300 group-hover:text-purple-500"} transition-colors`}
+                    ></i>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <h2 className="text-3xl font-bold">
+                      {
+                        tasks.filter(
+                          (t) => t.status === "pending_completion_approval",
+                        ).length
+                      }
+                    </h2>
+                  </div>
+                </div>
+
+                <div
+                  className={`${t.bgCard} p-5 rounded-lg border ${t.border} ${t.borderHover} shadow-sm flex flex-col justify-between group transition-colors`}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider ${t.textMuted}`}
+                    >
+                      Golden Directives
+                    </span>
+                    <i
+                      className={`fa-solid fa-star ${theme === "dark" ? "text-gray-600 group-hover:text-[#D4AF37]" : "text-slate-300 group-hover:text-purple-500"} transition-colors`}
+                    ></i>
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <h2 className="text-3xl font-bold">
+                      {
+                        tasks.filter(
+                          (t) =>
+                            t.is_admin_directive && t.status !== "completed",
+                        ).length
+                      }
+                    </h2>
+                  </div>
+                </div>
+
+                {userProfile.role === "admin" && (
+                  <div
+                    onClick={openAdminWarningsModal}
+                    className={`${t.bgCard} p-5 rounded-lg border ${t.border} ${theme === "dark" ? "hover:border-rose-900" : "hover:border-red-300"} shadow-sm flex flex-col justify-between group cursor-pointer transition-colors`}
+                  >
+                    <div className="flex justify-between items-center mb-4">
+                      <span
+                        className={`text-[11px] font-bold uppercase tracking-wider ${t.textMuted}`}
+                      >
+                        System Warnings
+                      </span>
+                      <i
+                        className={`fa-solid fa-shield-halved ${theme === "dark" ? "text-gray-600 group-hover:text-rose-500" : "text-slate-300 group-hover:text-red-500"} transition-colors`}
+                      ></i>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <h2 className="text-3xl font-bold">
+                        {allTeamsData.reduce((acc, team) => {
+                          const lead = Array.isArray(team.profiles)
+                            ? team.profiles[0]
+                            : team.profiles;
+                          return acc + (lead?.warning_count > 0 ? 1 : 0);
+                        }, 0)}
+                      </h2>
+                      <span
+                        className={`text-[10px] font-bold ${t.bgMuted} px-2 py-0.5 rounded border ${t.border} transition-colors flex items-center gap-1 uppercase tracking-wide`}
+                      >
+                        Manage{" "}
+                        <i className="fa-solid fa-arrow-right text-[8px]"></i>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {userProfile.role === "team_lead" && (
+                  <div
+                    onClick={openLeadWarningModal}
+                    className={`${t.bgCard} p-5 rounded-lg border shadow-sm flex flex-col justify-between group cursor-pointer transition-colors ${userProfile.warning_count > 0 ? (theme === "dark" ? "border-rose-900 bg-rose-900/10" : "border-red-300 bg-red-50/30") : t.border}`}
+                  >
+                    <div className="flex justify-between items-center mb-4">
+                      <span
+                        className={`text-[11px] font-bold uppercase tracking-wider ${t.textMuted}`}
+                      >
+                        Disciplinary Status
+                      </span>
+                      <i
+                        className={`fa-solid ${userProfile.warning_count > 0 ? "fa-circle-exclamation text-red-500" : "fa-check-circle text-emerald-500"}`}
+                      ></i>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <h2 className="text-3xl font-bold">
+                        {userProfile.warning_count || 0}
+                        <span className={`text-lg ${t.textMuted} font-medium`}>
+                          /3
+                        </span>
+                      </h2>
+                      <span
+                        className={`text-[10px] font-bold ${t.bgMuted} px-2 py-0.5 rounded border ${t.border} transition-colors flex items-center gap-1 uppercase tracking-wide`}
+                      >
+                        View Log{" "}
+                        <i className="fa-solid fa-arrow-right text-[8px]"></i>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Data Matrix & Comms Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full pb-8">
+                {/* Data Matrix / Charts */}
+                <div
+                  className={`lg:col-span-2 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col`}
+                >
+                  <div
+                    className={`px-5 py-4 border-b ${t.border} flex justify-between items-center ${t.bgMuted} rounded-t-lg`}
+                  >
+                    <h3 className="text-[13px] font-bold uppercase tracking-wide">
+                      {userProfile.role === "admin"
+                        ? "Division Task Matrix"
+                        : "Team Success Matrix"}
+                    </h3>
+                  </div>
+
+                  <div className="p-6 flex flex-col sm:flex-row items-center gap-10 justify-center flex-1">
+                    {userProfile.role === "admin" ? (
+                      <>
+                        <div className="shrink-0 relative flex items-center justify-center w-[140px] h-[140px]">
+                          <div
+                            className="donut-chart"
+                            style={{ background: adminConicGradient }}
+                          >
+                            <div className="donut-hole shadow-inner flex-col">
+                              <span className="text-2xl font-bold block leading-none">
+                                {totalAdminTasks}
+                              </span>
+                              <span
+                                className={`text-[9px] ${t.textMuted} uppercase tracking-widest mt-0.5 font-bold`}
+                              >
+                                Total
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-full sm:w-auto min-w-[250px]">
+                          <table className="w-full text-sm text-left">
+                            <tbody>
+                              {dynamicDivisionStats.map((stat, idx) => (
+                                <tr
+                                  key={idx}
+                                  className={`border-b ${t.border} last:border-0`}
+                                >
+                                  <td
+                                    className={`py-2.5 flex items-center font-semibold text-xs`}
+                                  >
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-sm mr-3"
+                                      style={{ backgroundColor: stat.color }}
+                                    ></span>{" "}
+                                    {stat.name}
+                                  </td>
+                                  <td className="py-2.5 font-bold text-right text-xs">
+                                    {stat.count}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="shrink-0 relative flex items-center justify-center w-[140px] h-[140px]">
+                          <div
+                            className="donut-chart"
+                            style={{ background: leadConicGradient }}
+                          >
+                            <div className="donut-hole shadow-inner flex-col">
+                              <span className="text-2xl font-bold block leading-none">
+                                {totalLeadTasks}
+                              </span>
+                              <span
+                                className={`text-[9px] ${t.textMuted} uppercase tracking-widest mt-0.5 font-bold`}
+                              >
+                                Total
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-full sm:w-auto min-w-[250px]">
+                          <table className="w-full text-sm text-left">
+                            <tbody>
+                              <tr className={`border-b ${t.border}`}>
+                                <td
+                                  className={`py-2.5 flex items-center font-semibold text-xs`}
+                                >
+                                  <span className="w-2.5 h-2.5 rounded-sm bg-[#16a34a] mr-3"></span>{" "}
+                                  Success / Approved
+                                </td>
+                                <td className="py-2.5 font-bold text-right text-xs">
+                                  {successTasks}
+                                </td>
+                              </tr>
+                              <tr className={`border-b ${t.border}`}>
+                                <td
+                                  className={`py-2.5 flex items-center font-semibold text-xs`}
+                                >
+                                  <span className="w-2.5 h-2.5 rounded-sm bg-[#d97706] mr-3"></span>{" "}
+                                  In Progress
+                                </td>
+                                <td className="py-2.5 font-bold text-right text-xs">
+                                  {pendingTasks}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  className={`py-2.5 flex items-center font-semibold text-xs`}
+                                >
+                                  <span className="w-2.5 h-2.5 rounded-sm bg-[#dc2626] mr-3"></span>{" "}
+                                  Failure / Rejected
+                                </td>
+                                <td className="py-2.5 font-bold text-right text-xs">
+                                  {failTasks}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Comms Feed Preview */}
+                <div
+                  className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col h-[300px]`}
+                >
+                  <div
+                    className={`px-5 py-4 border-b ${t.border} flex justify-between items-center ${t.bgMuted} rounded-t-lg`}
+                  >
+                    <h3 className="text-[13px] font-bold uppercase tracking-wide flex items-center gap-2">
+                      <i
+                        className={`fa-regular fa-envelope ${t.textMuted}`}
+                      ></i>{" "}
+                      Chats
+                    </h3>
+                    {unreadDashboardMessages.length > 0 && (
+                      <span
+                        className={`${theme === "dark" ? "bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/30" : "bg-purple-100 border-purple-200 text-purple-700"} text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-wide`}
+                      >
+                        {unreadDashboardMessages.length} Unread
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
+                    {unreadDashboardMessages.length === 0 ? (
+                      <div
+                        className={`h-full flex flex-col items-center justify-center ${t.textMuted} p-6`}
+                      >
+                        <i className="fa-solid fa-inbox text-3xl mb-3 opacity-50"></i>
+                        <p className="text-xs font-semibold">Inbox is clear.</p>
+                      </div>
+                    ) : (
+                      <ul
+                        className={`divide-y ${theme === "dark" ? "divide-[#D4AF37]/10" : "divide-slate-100"}`}
+                      >
+                        {unreadDashboardMessages.map((msg, idx) => (
+                          <li
+                            key={idx}
+                            onClick={() => {
+                              setActiveChatChannel(msg.channelId);
+                              setActiveTab("chat");
+                            }}
+                            className={`p-3 ${t.bgCardHover} cursor-pointer transition-colors flex gap-3 group`}
+                          >
+                            <div className="relative shrink-0 pt-0.5">
+                              <img
+                                src={msg.channelAvatar}
+                                className={`w-8 h-8 rounded object-cover border ${t.border}`}
+                                alt="avatar"
+                              />
+                              {msg.unreadCount > 0 && (
+                                <span
+                                  className={`absolute -top-1.5 -right-1.5 w-3.5 h-3.5 ${theme === "dark" ? "bg-[#D4AF37]" : "bg-purple-600"} rounded-full border-2 ${theme === "dark" ? "border-[#1a1a1a]" : "border-white"}`}
+                                ></span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-baseline mb-0.5">
+                                <h4
+                                  className={`text-[13px] font-bold truncate pr-2 ${t.textMain} ${theme === "dark" ? "group-hover:text-[#D4AF37]" : "group-hover:text-purple-600"} transition-colors`}
+                                >
+                                  {msg.channelLabel}
+                                </h4>
+                                <span
+                                  className={`text-[9px] ${t.textMuted} font-bold uppercase tracking-wider`}
+                                >
+                                  {msg.time}
+                                </span>
+                              </div>
+                              <p
+                                className={`text-xs ${t.textMuted} truncate font-medium`}
+                              >
+                                <span
+                                  className={`font-bold ${t.textMain} mr-1`}
+                                >
+                                  {msg.senderName}:
+                                </span>
+                                {msg.text}
+                              </p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: CHAT (Comms Feed) */}
+          {activeTab === "chat" && (
+            <div className="flex w-full h-[calc(100vh-112px)] overflow-hidden p-2 sm:p-4 gap-4">
+              {/* Channels Sidebar */}
+              <div
+                className={`w-[80px] sm:w-[280px] lg:w-[320px] ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col overflow-hidden shrink-0`}
+              >
+                <div
+                  className={`p-4 border-b ${t.border} ${t.bgMuted} flex items-center justify-center sm:justify-between`}
+                >
+                  <h2 className="hidden sm:block font-bold text-sm uppercase tracking-wide">
+                    Chats
+                  </h2>
+                  <button
+                    onClick={() => setShowNewChatModal(true)}
+                    title="New Direct Message"
+                    className={`w-7 h-7 rounded ${t.bgCard} ${t.bgCardHover} ${t.textMuted} flex items-center justify-center transition-all border ${t.border} shadow-sm`}
+                  >
+                    <i className="fa-solid fa-pen-to-square text-xs"></i>
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
+                  {availableChannels.map((ch) => {
+                    const preview = channelPreviews[ch.id];
+                    const isActive = activeChatChannel === ch.id;
+                    return (
+                      <button
+                        key={ch.id}
+                        onClick={() => setActiveChatChannel(ch.id)}
+                        className={`w-full text-left p-2 sm:px-4 sm:py-3 border-l-4 transition-all flex items-center justify-center sm:justify-start gap-3 ${isActive ? `${t.accentBg} ${theme === "dark" ? "border-[#D4AF37]" : "border-purple-600"}` : `border-transparent ${t.bgCardHover}`}`}
+                      >
+                        <div className="relative shrink-0">
+                          <img
+                            src={ch.avatar_url}
+                            alt="Channel"
+                            className={`w-10 h-10 rounded object-cover border ${t.border} ${t.bgCard}`}
+                          />
+                          {preview?.count > 0 && !isActive && (
+                            <span
+                              className={`sm:hidden absolute -top-1 -right-1 ${t.primaryBg} ${t.primaryText} text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm`}
+                            >
+                              {preview.count}
+                            </span>
+                          )}
+                        </div>
+                        <div className="hidden sm:flex flex-col overflow-hidden w-full">
+                          <div className="flex justify-between items-center w-full">
+                            <span
+                              className={`font-bold text-[13px] truncate ${t.textMain}`}
+                            >
+                              {ch.label}
+                            </span>
+                            {preview?.time && (
+                              <span
+                                className={`text-[9px] uppercase font-bold ${preview.count > 0 && !isActive ? t.accentText : t.textMuted}`}
+                              >
+                                {preview.time}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center w-full mt-0.5">
+                            <span
+                              className={`text-[11px] ${t.textMuted} truncate pr-2 font-medium`}
+                            >
+                              {preview ? (
+                                <span className={`font-semibold ${t.textMain}`}>
+                                  {preview.sender}:{" "}
+                                </span>
+                              ) : (
+                                ""
+                              )}
+                              {preview ? preview.text : "No signals"}
+                            </span>
+                            {preview?.count > 0 && !isActive && (
+                              <span
+                                className={`${t.primaryBg} ${t.primaryText} text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm`}
+                              >
+                                {preview.count}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Chat Window */}
+              <div
+                className={`flex-1 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col overflow-hidden relative`}
+              >
+                {/* Chat Header */}
+                <div
+                  className={`px-5 py-3 border-b ${t.border} ${t.bgMuted} flex justify-between items-center shadow-sm z-20`}
+                >
+                  {activeChObj && (
+                    <div
+                      className="flex items-center gap-3 cursor-pointer group w-full"
+                      onClick={showGroupInfo}
+                    >
+                      <img
+                        src={activeChObj.avatar_url}
+                        className={`w-10 h-10 rounded object-cover border ${t.border}`}
+                        alt="Avatar"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h3
+                          className={`font-bold text-sm truncate transition-colors ${t.textMain} ${theme === "dark" ? "group-hover:text-[#D4AF37]" : "group-hover:text-purple-600"}`}
+                        >
+                          {activeChObj.label}
+                        </h3>
+                        <p
+                          className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-wider truncate mt-0.5`}
+                        >
+                          {activeChObj.isDirect
+                            ? ""
+                            : ` ${activeChObj.memberIds.length} Members`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pinned Message */}
+                {pinnedMessage && (
+                  <div
+                    className={`${theme === "dark" ? "bg-[#D4AF37]/10 border-[#D4AF37]/20" : "bg-amber-50 border-amber-100"} border-b px-4 py-2 flex items-center justify-between z-10 shadow-sm`}
+                  >
+                    <div
+                      className="flex items-center gap-3 overflow-hidden cursor-pointer"
+                      onClick={() => scrollToMessage(pinnedMessage.id)}
+                    >
+                      <i
+                        className={`fa-solid fa-thumbtack ${theme === "dark" ? "text-[#D4AF37]" : "text-amber-500"} text-xs`}
+                      ></i>
+                      <div className="flex flex-col truncate">
+                        <span
+                          className={`text-[9px] font-bold ${theme === "dark" ? "text-[#D4AF37]" : "text-amber-700"} uppercase tracking-widest`}
+                        >
+                          Pinned
+                        </span>
+                        <span
+                          className={`text-xs ${t.textMain} font-semibold truncate max-w-[300px]`}
+                        >
+                          {pinnedMessage.message || "Encrypted Attachment"}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handlePinMessage(pinnedMessage.id, true)}
+                      className={`${theme === "dark" ? "text-[#D4AF37] hover:text-rose-500" : "text-amber-400 hover:text-red-500"} transition-colors`}
+                    >
+                      <i className="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                  </div>
+                )}
+
+                {/* Chat Feed */}
+                <div
+                  ref={chatContainerRef}
+                  onScroll={handleChatScroll}
+                  className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar ${theme === "dark" ? "bg-[#121212]" : "bg-[#F8FAFC]"}`}
+                >
+                  {groupedMessages.length === 0 ? (
+                    <div
+                      className={`h-full flex flex-col items-center justify-center ${t.textMuted}`}
+                    >
+                      <i className="fa-solid fa-shield-halved text-4xl mb-3 opacity-50"></i>
+                      <p className="text-xs font-bold uppercase tracking-widest">
+                        Channel Secured. Awaiting Transmission.
+                      </p>
+                    </div>
+                  ) : (
+                    groupedMessages.map((item, idx) => {
+                      if (item.type === "date") {
+                        return (
+                          <div
+                            key={item.id}
+                            className="flex justify-center my-4"
+                          >
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full ${t.bgCard} ${t.border} border ${t.textMuted} shadow-sm`}
+                            >
+                              {item.label}
+                            </span>
+                          </div>
+                        );
+                      }
+                      const msg = item;
+                      const isMe = msg.sender_id === userProfile.id;
+                      const isEditable =
+                        isMe &&
+                        new Date() - new Date(msg.created_at) <
+                          2 * 60 * 60 * 1000;
+                      const senderInfo = globalDirectory[msg.sender_id] || {};
+                      const senderTeam = senderInfo.team_name || "Unassigned";
+                      const repliedMsg = msg.reply_to
+                        ? chatMessages.find((m) => m.id === msg.reply_to)
+                        : null;
+                      const readByNames = (msg.read_by || [])
+                        .filter((id) => id !== msg.sender_id)
+                        .map(
+                          (id) => globalDirectory[id]?.full_name?.split(" ")[0],
+                        )
+                        .filter(Boolean);
+
+                      return (
+                        <div
+                          key={msg.id}
+                          id={`msg-${msg.id}`}
+                          className={`flex flex-col w-full ${isMe ? "items-end" : "items-start"} mb-4 group`}
+                        >
+                          {/* Message Actions */}
+                          <div
+                            className={`flex items-center gap-1 mb-1 transition-opacity ${isMe ? "mr-10" : "ml-10"}`}
+                          >
+                            <button
+                              onClick={() => setReplyingToMessage(msg)}
+                              className={`w-6 h-6 rounded ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} flex items-center justify-center shadow-sm`}
+                              title="Reply"
+                            >
+                              <i className="fa-solid fa-reply text-[9px]"></i>
+                            </button>
+                            <button
+                              onClick={() =>
+                                handlePinMessage(msg.id, msg.is_pinned)
+                              }
+                              className={`w-6 h-6 rounded border shadow-sm flex items-center justify-center ${msg.is_pinned ? (theme === "dark" ? "bg-[#D4AF37]/20 border-[#D4AF37] text-[#D4AF37]" : "bg-amber-100 border-amber-200 text-amber-600") : `${t.bgCard} ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"}`}`}
+                              title="Pin"
+                            >
+                              <i className="fa-solid fa-thumbtack text-[9px]"></i>
+                            </button>
+                            {isEditable && (
+                              <button
+                                onClick={() => {
+                                  setEditingMessage(msg);
+                                  setChatInput(msg.message);
+                                  setTimeout(
+                                    () => chatInputRef.current?.focus(),
+                                    50,
+                                  );
+                                }}
+                                className={`w-6 h-6 rounded ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} flex items-center justify-center shadow-sm`}
+                                title="Edit"
+                              >
+                                <i className="fa-solid fa-pen text-[9px]"></i>
+                              </button>
+                            )}
+                            {isMe && (
+                              <button
+                                onClick={() => handleDeleteChatMessage(msg.id)}
+                                className={`w-6 h-6 rounded ${t.bgCard} border ${t.border} ${t.textMuted} hover:text-rose-500 flex items-center justify-center shadow-sm`}
+                                title="Delete"
+                              >
+                                <i className="fa-solid fa-trash text-[9px]"></i>
+                              </button>
+                            )}
+                          </div>
+
+                          <div
+                            className={`flex gap-3 max-w-[85%] ${isMe ? "flex-row-reverse" : "flex-row"}`}
+                          >
+                            {msg.profiles?.avatar_url ? (
+                              <img
+                                src={msg.profiles.avatar_url}
+                                className={`w-8 h-8 rounded object-cover shadow-sm self-end border ${t.border}`}
+                                alt="Av"
+                              />
+                            ) : (
+                              <div
+                                className={`w-8 h-8 rounded ${t.bgMuted} ${t.textMuted} flex items-center justify-center font-bold text-xs shadow-sm self-end border ${t.border}`}
+                              >
+                                {msg.profiles?.full_name?.charAt(0) || "?"}
+                              </div>
+                            )}
+
+                            <div
+                              className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
+                            >
+                              <div
+                                className={`p-3 shadow-sm text-sm border ${getChatBubbleStyle(senderTeam, isMe, showRoleBadgeAndColors)}`}
+                              >
+                                {repliedMsg && (
+                                  <div
+                                    onClick={() =>
+                                      scrollToMessage(repliedMsg.id)
+                                    }
+                                    className={`mb-2 p-2 rounded cursor-pointer border-l-2 transition-colors ${isMe ? (theme === "dark" ? "bg-black/20 border-black text-black" : "bg-purple-700/30 border-purple-300 text-purple-50") : `${t.bgMuted} border-slate-300 ${t.textMuted} border ${t.border}`}`}
+                                  >
+                                    <span
+                                      className={`font-bold text-[9px] uppercase tracking-widest block mb-0.5 ${isMe ? (theme === "dark" ? "text-black" : "text-purple-200") : t.textMuted}`}
+                                    >
+                                      {repliedMsg.profiles?.full_name ||
+                                        "Unknown"}
+                                    </span>
+                                    <span className="text-xs truncate block max-w-[200px] opacity-90 font-medium">
+                                      {repliedMsg.message || "[Attachment]"}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div
+                                  className={`flex justify-between items-baseline mb-1 gap-4 border-b ${isMe ? (theme === "dark" ? "border-black/20" : "border-purple-500") : t.border} pb-1`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`font-bold text-xs ${isMe ? (theme === "dark" ? "text-black" : "text-white") : getChatNameColor(senderTeam)}`}
+                                    >
+                                      {isMe ? "You" : msg.profiles?.full_name}
+                                    </span>
+                                    {!isMe &&
+                                      senderTeam !== "Unassigned" &&
+                                      showRoleBadgeAndColors && (
+                                        <span
+                                          className={`text-[7px] font-black uppercase tracking-widest px-1 py-0.5 rounded shadow-sm border ${getDivisionStyle(senderTeam)}`}
+                                        >
+                                          {senderTeam}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <span
+                                    className={`text-[8px] font-bold uppercase tracking-widest ${isMe ? (theme === "dark" ? "text-black/70" : "text-purple-200") : t.textMuted}`}
+                                  >
+                                    {new Date(
+                                      msg.created_at,
+                                    ).toLocaleTimeString([], {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+
+                                {msg.media_type === "image" && (
+                                  <img
+                                    src={msg.media_url}
+                                    className={`max-w-full rounded mb-2 mt-2 border ${t.border} shadow-sm`}
+                                    style={{ maxHeight: "250px" }}
+                                  />
+                                )}
+                                {msg.media_type === "video" && (
+                                  <video
+                                    src={msg.media_url}
+                                    controls
+                                    className={`max-w-full rounded mb-2 mt-2 border ${t.border} shadow-sm`}
+                                    style={{ maxHeight: "250px" }}
+                                  />
+                                )}
+                                {msg.message && (
+                                  <p
+                                    className={`whitespace-pre-wrap leading-relaxed font-medium text-[13px] ${isMe && theme === "dark" ? "text-black" : ""}`}
+                                  >
+                                    {renderMessageText(msg.message)}
+                                  </p>
+                                )}
+                                {msg.edited_at && (
+                                  <span
+                                    className={`block text-right text-[8px] font-bold mt-1 uppercase tracking-widest ${isMe ? (theme === "dark" ? "text-black/70" : "text-purple-300") : t.textMuted}`}
+                                  >
+                                    Edited
+                                  </span>
+                                )}
+                              </div>
+
+                              {isMe && readByNames.length > 0 && (
+                                <div
+                                  className={`text-[9px] ${t.textMuted} mt-1 font-semibold flex items-center gap-1 pr-1 uppercase tracking-wider`}
+                                >
+                                  <i
+                                    className={`fa-solid fa-check-double ${theme === "dark" ? "text-[#D4AF37]" : "text-purple-500"}`}
+                                  ></i>{" "}
+                                  {readByNames.join(", ")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input Area Enhancements */}
+                <div className="absolute bottom-[70px] left-0 w-full px-4 pointer-events-none flex flex-col items-center z-30">
+                  {pastedImage && (
+                    <div
+                      className={`${t.bgCard} border ${theme === "dark" ? "border-[#D4AF37]" : "border-slate-300"} rounded shadow-lg p-2 flex items-center justify-between w-[95%] pointer-events-auto mb-2 border-l-4 ${theme === "dark" ? "border-l-[#D4AF37]" : "border-l-purple-500"}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={URL.createObjectURL(pastedImage)}
+                          className={`w-10 h-10 object-cover rounded border ${t.border}`}
+                        />
+                        <span
+                          className={`text-[11px] font-bold ${t.textMain} uppercase tracking-widest`}
+                        >
+                          Clipboard Image Ready
+                        </span>
+                      </div>
+                      <button
+                        onClick={removePastedImage}
+                        className={`${t.textMuted} hover:text-red-500 px-2 py-1 rounded ${t.bgCardHover} transition-colors`}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+
+                  {replyingToMessage && (
+                    <div
+                      className={`${t.bgCard} border ${theme === "dark" ? "border-[#D4AF37]" : "border-slate-300"} rounded shadow-lg p-2 flex items-center justify-between w-[95%] pointer-events-auto mb-2 border-l-4 ${theme === "dark" ? "border-l-[#D4AF37]" : "border-l-purple-500"}`}
+                    >
+                      <div
+                        className={`flex flex-col pl-2 border-l ${t.border} overflow-hidden`}
+                      >
+                        <span
+                          className={`text-[9px] font-bold ${theme === "dark" ? "text-[#D4AF37]" : "text-purple-600"} uppercase tracking-widest mb-0.5`}
+                        >
+                          <i className="fa-solid fa-reply mr-1"></i> Replying to{" "}
+                          {replyingToMessage.profiles?.full_name}
+                        </span>
+                        <span
+                          className={`text-xs ${t.textMuted} font-medium truncate max-w-sm`}
+                        >
+                          {replyingToMessage.message || "Attachment"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setReplyingToMessage(null)}
+                        className={`${t.textMuted} hover:text-red-500 px-2 py-1 rounded ${t.bgCardHover} transition-colors`}
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input Bar */}
+                <div
+                  className={`p-3 border-t ${t.border} ${t.bgCard} relative z-20`}
+                >
+                  {editingMessage && (
+                    <div
+                      className={`absolute -top-7 left-4 ${theme === "dark" ? "bg-[#D4AF37]/20 border-[#D4AF37]/50 text-[#D4AF37]" : "bg-amber-100 border-amber-200 text-amber-800"} text-[9px] font-bold uppercase tracking-widest px-3 py-1 rounded-t flex items-center gap-2 shadow-sm`}
+                    >
+                      <i className="fa-solid fa-pen"></i> Editing Mode
+                      <button
+                        onClick={() => {
+                          setEditingMessage(null);
+                          setChatInput("");
+                        }}
+                        className="ml-2 hover:text-red-600"
+                      >
+                        <i className="fa-solid fa-xmark"></i>
+                      </button>
+                    </div>
+                  )}
+
+                  <div
+                    className={`flex items-end gap-2 ${t.bgMuted} border ${t.border} rounded p-1.5 focus-within:border-[${theme === "dark" ? "#D4AF37" : "#9333ea"}] transition-all shadow-sm`}
+                  >
+                    <input
+                      type="file"
+                      ref={chatMediaInputRef}
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={handleChatMediaUpload}
+                    />
+                    <button
+                      onClick={() => chatMediaInputRef.current.click()}
+                      disabled={isSendingChat}
+                      className={`w-8 h-8 rounded flex items-center justify-center ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} ${t.bgCardHover} transition-colors shrink-0 mb-0.5 shadow-sm`}
+                      title="Upload Media"
+                    >
+                      <i className="fa-solid fa-paperclip"></i>
+                    </button>
+                    <textarea
+                      ref={chatInputRef}
+                      className={`flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium ${t.textMain} px-2 py-2 resize-none custom-scrollbar outline-none`}
+                      placeholder={
+                        editingMessage
+                          ? "Edit message..."
+                          : "Message.... (Ctrl+V supported)"
+                      }
+                      value={chatInput}
+                      rows={
+                        chatInput.split("\n").length > 1
+                          ? Math.min(chatInput.split("\n").length, 4)
+                          : 1
+                      }
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onPaste={handlePaste}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSendChatMessage();
+                        }
+                      }}
+                      disabled={isSendingChat}
+                      style={{ maxHeight: "100px" }}
+                    />
+                    <button
+                      onClick={handleSendChatMessage}
+                      disabled={
+                        isSendingChat ||
+                        (!chatInput.trim() && !pastedImage && !isSendingChat)
+                      }
+                      className={`w-9 h-9 flex items-center justify-center ${t.primaryBg} ${t.primaryText} rounded ${t.primaryHover} transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-0.5 shadow-sm`}
+                    >
+                      {isSendingChat ? (
+                        <i className="fa-solid fa-spinner fa-spin"></i>
+                      ) : (
+                        <i className="fa-solid fa-paper-plane text-sm"></i>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 1-1 Chat Modal */}
               {showNewChatModal && (
-                <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div className="bg-white rounded-[24px] shadow-xl w-full max-w-md flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95">
-                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                      <h3 className="font-black text-slate-900">
-                        Start Direct Message
+                <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div
+                    className={`${t.bgCard} rounded-lg shadow-xl w-full max-w-sm flex flex-col overflow-hidden border ${t.border} animate-in fade-in zoom-in-95`}
+                  >
+                    <div
+                      className={`p-4 border-b ${t.border} ${t.bgMuted} flex justify-between items-center`}
+                    >
+                      <h3
+                        className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
+                      >
+                        Secure Direct Link
                       </h3>
                       <button
                         onClick={() => setShowNewChatModal(false)}
-                        className="text-slate-400 hover:text-rose-500"
+                        className={`${t.textMuted} hover:text-red-500 transition-colors`}
                       >
-                        <i className="fa-solid fa-xmark text-xl"></i>
+                        <i className="fa-solid fa-xmark"></i>
                       </button>
                     </div>
-                    <div className="p-4 border-b border-slate-100 relative">
-                      <i className="fa-solid fa-search absolute left-7 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                    <div className={`p-3 border-b ${t.border} relative`}>
+                      <i
+                        className={`fa-solid fa-search absolute left-6 top-1/2 -translate-y-1/2 ${t.textMuted} text-xs`}
+                      ></i>
                       <input
                         type="text"
-                        placeholder="Search Staff ID or Name..."
+                        placeholder="Search Operative ID or Name..."
                         value={chatSearchQuery}
                         onChange={(e) => setChatSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-indigo-400 transition-colors"
+                        className={`w-full pl-9 pr-3 py-2 ${t.bgMuted} border ${t.border} rounded text-sm font-medium outline-none focus:border-[${theme === "dark" ? "#D4AF37" : "#9333ea"}] ${t.textMain} transition-colors`}
                       />
                     </div>
                     <div className="overflow-y-auto max-h-[300px] p-2 custom-scrollbar">
@@ -2738,8 +3799,10 @@ export default function ZenTechDashboard() {
                               .toLowerCase()
                               .includes(chatSearchQuery.toLowerCase())),
                       ).length === 0 ? (
-                        <p className="text-slate-400 text-center py-4 text-sm font-bold">
-                          No staff found.
+                        <p
+                          className={`${t.textMuted} text-center py-6 text-xs font-semibold`}
+                        >
+                          No operatives found.
                         </p>
                       ) : (
                         allUsersList
@@ -2757,20 +3820,24 @@ export default function ZenTechDashboard() {
                             <div
                               key={staff.id}
                               onClick={() => handleStartDirectMessage(staff.id)}
-                              className="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer rounded-xl transition-colors border border-transparent hover:border-slate-200"
+                              className={`flex items-center gap-3 p-2 ${t.bgCardHover} cursor-pointer rounded border border-transparent ${t.borderHover} transition-colors mb-1`}
                             >
                               <img
                                 src={
                                   staff.avatar_url ||
-                                  `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.full_name)}&background=f3f4f6&color=64748b`
+                                  `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.full_name)}&background=${theme === "dark" ? "1a1a1a" : "f1f5f9"}&color=${theme === "dark" ? "D4AF37" : "475569"}`
                                 }
-                                className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                                className={`w-8 h-8 rounded object-cover border ${t.border}`}
                               />
                               <div>
-                                <p className="font-bold text-slate-900 text-sm">
+                                <p
+                                  className={`font-bold ${t.textMain} text-xs`}
+                                >
                                   {staff.full_name}
                                 </p>
-                                <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest">
+                                <p
+                                  className={`text-[9px] ${t.textMuted} font-bold uppercase tracking-widest`}
+                                >
                                   {staff.staff_id} •{" "}
                                   {staff.role.replace("_", " ")}
                                 </p>
@@ -2782,1716 +3849,1009 @@ export default function ZenTechDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
 
-              <div className="w-[320px] h-full bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden shrink-0">
-                <div className="p-6 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                  <h2 className="font-black text-slate-900 text-xl tracking-tight">
-                    Messages
-                  </h2>
-                  <button
-                    onClick={() => setShowNewChatModal(true)}
-                    title="New 1-1 Chat"
-                    className="w-8 h-8 rounded-xl bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 flex items-center justify-center transition-all border border-slate-200 shadow-sm"
+          {/* TAB: TASKS */}
+          {activeTab === "tasks" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 w-full gap-4"></div>
+
+              <div
+                className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} overflow-x-auto w-full`}
+              >
+                {loadingTasks ? (
+                  <div
+                    className={`flex items-center justify-center h-64 ${t.accentText}`}
                   >
-                    <i className="fa-solid fa-pen-to-square text-sm"></i>
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar bg-white">
-                  {availableChannels.map((ch) => {
-                    const preview = channelPreviews[ch.id];
-                    return (
-                      <button
-                        key={ch.id}
-                        onClick={() => setActiveChatChannel(ch.id)}
-                        className={`w-full text-left px-4 py-4 rounded-[20px] transition-all duration-200 flex items-center gap-4 ${activeChatChannel === ch.id ? "bg-indigo-50 shadow-sm border border-indigo-100" : "border border-transparent hover:bg-slate-50"}`}
+                    <i className="fa-solid fa-circle-notch fa-spin text-3xl"></i>
+                  </div>
+                ) : tasks.length === 0 ? (
+                  <div
+                    className={`flex flex-col items-center justify-center min-h-[300px] text-center ${t.bgMuted}`}
+                  >
+                    <i className="fa-solid fa-check-double text-5xl text-emerald-500 mb-4 opacity-80"></i>
+                    <h3 className={`text-lg font-bold ${t.textMain}`}>
+                      Queue Cleared
+                    </h3>
+                    <p className={`text-xs font-semibold ${t.textMuted} mt-1`}>
+                      All directives have been processed.
+                    </p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse min-w-[800px]">
+                    <thead>
+                      <tr
+                        className={`${t.bgMuted} text-[10px] uppercase ${t.textMuted} font-extrabold border-b ${t.border}`}
                       >
-                        <div className="relative shrink-0">
-                          <img
-                            src={ch.avatar_url}
-                            alt="Group"
-                            className="w-12 h-12 rounded-full object-cover bg-slate-100 border border-slate-200 shadow-sm"
-                          />
-                        </div>
-                        <div className="flex flex-col overflow-hidden w-full">
-                          <div className="flex justify-between items-center w-full">
-                            <span className="font-extrabold text-slate-900 text-sm truncate">
-                              {ch.label}
+                        <th className="px-5 py-3 tracking-widest">Tasks</th>
+                        <th className="px-5 py-3 tracking-widest">Division</th>
+                        <th className="px-5 py-3 tracking-widest">Assignee</th>
+                        <th className="px-5 py-3 tracking-widest">Deadline</th>
+                        <th className="px-5 py-3 tracking-widest">Status</th>
+                        <th className="px-5 py-3 text-right tracking-widest">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-sm font-medium">
+                      {tasks.map((task) => (
+                        <tr
+                          key={task.id}
+                          className={`border-b ${t.border} ${t.bgCardHover} transition-colors ${task.is_admin_directive ? (theme === "dark" ? "bg-amber-900/10" : "bg-amber-50/30") : ""}`}
+                        >
+                          <td className="px-5 py-3 flex flex-col justify-center">
+                            <span
+                              className={`font-bold text-sm tracking-tight ${task.is_admin_directive ? (theme === "dark" ? "text-[#D4AF37]" : "text-amber-700") : t.textMain}`}
+                            >
+                              {task.is_admin_directive && (
+                                <i
+                                  className={`fa-solid fa-star ${theme === "dark" ? "text-[#D4AF37]" : "text-amber-500"} mr-1 text-xs`}
+                                ></i>
+                              )}
+                              {task.title}
                             </span>
-                            {preview?.time && (
-                              <span
-                                className={`text-[10px] whitespace-nowrap ${preview.count > 0 && activeChatChannel !== ch.id ? "text-indigo-600 font-black" : "text-slate-400 font-bold"}`}
+                            {task.file_url && (
+                              <a
+                                href={task.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`text-[10px] ${t.accentText} hover:opacity-80 mt-1 flex items-center font-bold w-fit transition-colors uppercase tracking-wide`}
                               >
-                                {preview.time}
+                                <i className="fa-solid fa-file-pdf text-red-500 mr-1"></i>{" "}
+                                View Document
+                              </a>
+                            )}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${getDivisionStyle(task.team)}`}
+                            >
+                              {task.team}
+                            </span>
+                          </td>
+                          <td
+                            className={`px-5 py-3 ${t.textMain} font-bold text-xs`}
+                          >
+                            {task.assignedToName}
+                          </td>
+                          <td className="px-5 py-3">
+                            {task.deadline ? (
+                              <span
+                                className={`text-xs font-bold flex items-center gap-1.5 ${new Date(task.deadline) < new Date() && task.status !== "completed" && task.status !== "approved" ? "text-red-600" : t.textMuted}`}
+                              >
+                                {new Date(task.deadline) < new Date() &&
+                                  task.status !== "completed" &&
+                                  task.status !== "approved" && (
+                                    <i className="fa-solid fa-triangle-exclamation text-[10px]"></i>
+                                  )}
+                                {new Date(task.deadline).toLocaleString(
+                                  "en-IN",
+                                  {
+                                    timeZone: "Asia/Kolkata",
+                                    dateStyle: "short",
+                                    timeStyle: "short",
+                                  },
+                                )}
+                              </span>
+                            ) : (
+                              <span
+                                className={`${t.textMuted} italic font-semibold text-[10px] uppercase`}
+                              >
+                                No Deadline
                               </span>
                             )}
-                          </div>
-                          <div className="flex justify-between items-center w-full mt-1">
-                            <span className="text-xs text-slate-500 truncate pr-2 font-medium">
-                              {preview ? (
-                                <span className="font-bold text-slate-700">
-                                  {preview.sender}:{" "}
-                                </span>
-                              ) : (
-                                ""
-                              )}
-                              {preview ? preview.text : "No messages yet"}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={`px-2 py-1 border rounded-md text-[9px] font-bold uppercase tracking-widest ${task.status === "in_progress" ? (theme === "dark" ? "bg-blue-900/20 border-blue-900 text-blue-400" : "bg-blue-50 border-blue-200 text-blue-700") : task.status === "pending_completion_approval" ? (theme === "dark" ? "bg-purple-900/20 border-purple-900 text-purple-400" : "bg-purple-50 border-purple-200 text-purple-700") : task.status === "rejected" ? (theme === "dark" ? "bg-red-900/20 border-red-900 text-red-400" : "bg-red-50 border-red-200 text-red-700") : theme === "dark" ? "bg-emerald-900/20 border-emerald-900 text-emerald-400" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}
+                            >
+                              {task.status.replace(/_/g, " ")}
                             </span>
-                            {preview?.count > 0 &&
-                              activeChatChannel !== ch.id && (
-                                <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center shadow-sm">
-                                  {preview.count}
-                                </span>
+                            {task.status === "rejected" && (
+                              <p className="text-[9px] text-red-600 mt-1 font-bold leading-tight">
+                                Reason: {task.adminFeedback}
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              {userProfile.role === "admin" &&
+                                task.status ===
+                                  "pending_completion_approval" && (
+                                  <>
+                                    <button
+                                      onClick={() =>
+                                        handleApproveCompletion(task.id)
+                                      }
+                                      className={`border ${t.border} text-emerald-600 hover:bg-emerald-500/10 w-7 h-7 rounded shadow-sm transition-colors text-xs`}
+                                      title="Approve"
+                                    >
+                                      <i className="fa-solid fa-check"></i>
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        handleRejectCompletion(task.id)
+                                      }
+                                      className={`border ${t.border} text-red-600 hover:bg-red-500/10 w-7 h-7 rounded shadow-sm transition-colors text-xs`}
+                                      title="Reject"
+                                    >
+                                      <i className="fa-solid fa-xmark"></i>
+                                    </button>
+                                  </>
+                                )}
+                              {(userProfile.role === "admin" ||
+                                userProfile.role === "team_lead") && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditTask(task)}
+                                    className={`border ${t.border} ${t.textMuted} hover:text-blue-600 hover:bg-blue-500/10 w-7 h-7 rounded shadow-sm transition-colors text-xs`}
+                                    title="Edit"
+                                  >
+                                    <i className="fa-solid fa-pen"></i>
+                                  </button>
+                                  {userProfile.role === "admin" && (
+                                    <button
+                                      onClick={() => handleDeleteTask(task.id)}
+                                      className={`border ${t.border} ${t.textMuted} hover:text-red-600 hover:bg-red-500/10 w-7 h-7 rounded shadow-sm transition-colors text-xs`}
+                                      title="Revoke"
+                                    >
+                                      <i className="fa-solid fa-trash"></i>
+                                    </button>
+                                  )}
+                                </>
                               )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex-1 h-full bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
-                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center relative z-20 shadow-sm">
-                  {activeChObj && (
-                    <div
-                      className="flex items-center gap-4 cursor-pointer hover:bg-white p-2 rounded-2xl transition-colors w-full"
-                      onClick={showGroupInfo}
-                      title="View Group Info"
-                    >
-                      <div className="relative group">
-                        <img
-                          src={activeChObj.avatar_url}
-                          alt="Group Avatar"
-                          className="w-12 h-12 rounded-full object-cover border border-slate-300 shadow-sm"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-black text-slate-900 text-lg truncate">
-                          {activeChObj.label}
-                        </h3>
-                        <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest truncate mt-0.5">
-                          {activeChObj.isDirect
-                            ? "Direct Message"
-                            : activeChObj.memberIds
-                                .map(
-                                  (id) =>
-                                    globalDirectory[id]?.full_name?.split(
-                                      " ",
-                                    )[0],
-                                )
-                                .filter(Boolean)
-                                .join(", ")}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {pinnedMessage && (
-                  <div
-                    onClick={() => scrollToMessage(pinnedMessage.id)}
-                    className="bg-indigo-50 border-b border-indigo-100 px-5 py-2.5 flex items-center justify-between cursor-pointer hover:bg-indigo-100 transition-colors z-10 shadow-sm animate-in slide-in-from-top-2"
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center shrink-0">
-                        <i className="fa-solid fa-thumbtack text-indigo-500 text-sm"></i>
-                      </div>
-                      <div className="flex flex-col truncate">
-                        <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
-                          Pinned Message
-                        </span>
-                        <span className="text-xs text-slate-700 font-medium truncate w-[300px] sm:w-[500px]">
-                          {pinnedMessage.message || "Media Attachment..."}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePinMessage(pinnedMessage.id, true);
-                      }}
-                      className="text-indigo-300 hover:text-rose-500 p-2 rounded-lg hover:bg-white transition-colors shrink-0"
-                    >
-                      <i className="fa-solid fa-xmark"></i>
-                    </button>
-                  </div>
-                )}
-
-                <div
-                  ref={chatContainerRef}
-                  onScroll={handleChatScroll}
-                  className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 custom-scrollbar"
-                >
-                  {chatMessages.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                      <i className="fa-regular fa-comments text-6xl mb-4 text-slate-200"></i>
-                      <p className="text-sm font-bold">
-                        No messages yet. Start the conversation!
-                      </p>
-                    </div>
-                  ) : (
-                    chatMessages.map((msg) => {
-                      const isMe = msg.sender_id === userProfile.id;
-                      const isEditable =
-                        isMe &&
-                        new Date() - new Date(msg.created_at) <
-                          2 * 60 * 60 * 1000;
-                      const senderInfo = globalDirectory[msg.sender_id] || {};
-                      const senderTeam = senderInfo.team_name || "Unassigned";
-                      const repliedMsg = msg.reply_to
-                        ? chatMessages.find((m) => m.id === msg.reply_to)
-                        : null;
-
-                      const readByNames = (msg.read_by || [])
-                        .filter((id) => id !== msg.sender_id)
-                        .map(
-                          (id) => globalDirectory[id]?.full_name?.split(" ")[0],
-                        )
-                        .filter(Boolean);
-                      const readByText =
-                        readByNames.length > 0
-                          ? `Seen by ${readByNames.join(", ")}`
-                          : "";
-
-                      return (
-                        <div
-                          key={msg.id}
-                          id={`msg-${msg.id}`}
-                          className={`flex flex-col w-full ${isMe ? "items-end" : "items-start"} mb-6`}
-                        >
-                          <div
-                            className={`flex items-center gap-1 mb-1 ${isMe ? "justify-end mr-12" : "justify-start ml-12"} bg-white border border-slate-200 rounded-md shadow-sm px-1 py-0.5`}
-                          >
-                            <button
-                              onClick={() => setReplyingToMessage(msg)}
-                              className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
-                              title="Reply"
-                            >
-                              <i className="fa-solid fa-reply text-[10px]"></i>
-                            </button>
-                            <button
-                              onClick={() =>
-                                handlePinMessage(msg.id, msg.is_pinned)
-                              }
-                              className={`w-6 h-6 rounded hover:bg-slate-100 flex items-center justify-center transition-colors ${msg.is_pinned ? "text-indigo-600 bg-indigo-50" : "text-slate-500"}`}
-                              title={msg.is_pinned ? "Unpin" : "Pin Message"}
-                            >
-                              <i className="fa-solid fa-thumbtack text-[10px]"></i>
-                            </button>
-                            {isEditable && (
-                              <button
-                                onClick={() => {
-                                  setEditingMessage(msg);
-                                  setChatInput(msg.message);
-                                  setTimeout(
-                                    () => chatInputRef.current?.focus(),
-                                    50,
-                                  );
-                                }}
-                                className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-colors"
-                                title="Edit (Within 2 hrs)"
-                              >
-                                <i className="fa-solid fa-pen text-[10px]"></i>
-                              </button>
-                            )}
-                          </div>
-
-                          <div
-                            className={`flex gap-3 max-w-[75%] ${isMe ? "flex-row-reverse" : "flex-row"}`}
-                          >
-                            {msg.profiles?.avatar_url ? (
-                              <img
-                                src={msg.profiles.avatar_url}
-                                alt="Avatar"
-                                className="w-8 h-8 rounded-full object-cover shadow-sm self-end border border-white"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs shadow-sm self-end border border-white">
-                                {msg.profiles?.full_name?.charAt(0) || "?"}
-                              </div>
-                            )}
-
-                            <div
-                              className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-                            >
-                              <div
-                                className={`px-5 py-3 shadow-sm text-sm border ${getChatBubbleStyle(senderTeam, isMe, showRoleBadgeAndColors)}`}
-                              >
-                                {repliedMsg && (
-                                  <div
+                              {userProfile.role === "ai_engineer" &&
+                                task.status === "in_progress" && (
+                                  <button
                                     onClick={() =>
-                                      scrollToMessage(repliedMsg.id)
+                                      handleEngineerUpdateProgress(task)
                                     }
-                                    className={`mb-3 p-2.5 rounded-xl cursor-pointer border-l-4 transition-colors ${isMe ? "bg-indigo-700/50 border-l-indigo-300 text-indigo-100 hover:bg-indigo-700" : "bg-slate-50 border-l-indigo-500 text-slate-600 hover:bg-slate-100 border border-slate-200"}`}
+                                    className={`px-3 py-1.5 ${t.primaryBg} ${t.primaryText} rounded font-bold text-[10px] uppercase shadow-sm transition-colors`}
                                   >
-                                    <span
-                                      className={`font-bold text-[10px] uppercase tracking-widest block mb-1 ${isMe ? "text-indigo-200" : "text-indigo-600"}`}
-                                    >
-                                      {repliedMsg.profiles?.full_name ||
-                                        "Unknown"}
-                                    </span>
-                                    <span className="text-xs truncate block max-w-[200px] opacity-90">
-                                      {repliedMsg.message || "Media Attachment"}
-                                    </span>
-                                  </div>
+                                    Update Status
+                                  </button>
                                 )}
-
-                                <div
-                                  className={`flex justify-between items-baseline mb-2 gap-4 border-b ${isMe ? "border-white/20" : "border-slate-200"} pb-1.5`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`block font-extrabold text-xs ${isMe ? "text-white" : showRoleBadgeAndColors ? getChatNameColor(senderTeam) : "text-slate-900"}`}
-                                    >
-                                      {isMe
-                                        ? "You"
-                                        : msg.profiles?.full_name || "Unknown"}
-                                    </span>
-                                    {!isMe &&
-                                      senderTeam !== "Unassigned" &&
-                                      showRoleBadgeAndColors && (
-                                        <span
-                                          className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm border ${getDivisionStyle(senderTeam)}`}
-                                        >
-                                          {senderTeam}
-                                        </span>
-                                      )}
-                                  </div>
-                                  <span
-                                    className={`text-[9px] font-bold uppercase tracking-widest ${isMe ? "text-indigo-200" : "text-slate-400"}`}
-                                  >
-                                    {new Date(
-                                      msg.created_at,
-                                    ).toLocaleTimeString([], {
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}
-                                  </span>
-                                </div>
-
-                                {msg.media_type === "sticker" && (
-                                  <img
-                                    src={msg.media_url}
-                                    className="w-28 h-28 object-contain my-2 drop-shadow-md"
-                                  />
-                                )}
-                                {msg.media_type === "image" && (
-                                  <img
-                                    src={msg.media_url}
-                                    alt="Chat Upload"
-                                    className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
-                                    style={{ maxHeight: "300px" }}
-                                  />
-                                )}
-                                {msg.media_type === "video" && (
-                                  <video
-                                    src={msg.media_url}
-                                    controls
-                                    className="max-w-full h-auto rounded-xl mb-2 mt-2 shadow-sm border border-slate-200/50"
-                                    style={{ maxHeight: "300px" }}
-                                  />
-                                )}
-                                {msg.message && (
-                                  <p className="whitespace-pre-wrap leading-relaxed font-medium">
-                                    {renderMessageText(msg.message)}
-                                  </p>
-                                )}
-
-                                {msg.edited_at && (
-                                  <span
-                                    className={`block text-right text-[9px] italic font-bold mt-1 ${isMe ? "text-indigo-300" : "text-slate-400"}`}
-                                  >
-                                    Edited
-                                  </span>
-                                )}
-                                {isMe && readByText && (
-                                  <div className="text-[10px] text-indigo-200 mt-2 text-right italic font-bold flex justify-end items-center gap-1">
-                                    <i className="fa-solid fa-check-double"></i>{" "}
-                                    {readByText}
-                                  </div>
-                                )}
-                              </div>
                             </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={chatEndRef} />
-                </div>
-
-                <div className="absolute bottom-[90px] left-0 w-full px-4 pointer-events-none flex flex-col items-center z-20">
-                  {showStickerPicker && (
-                    <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xl w-72 pointer-events-auto mb-2 self-start ml-2 flex flex-wrap gap-2 max-h-56 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2">
-                      <div className="w-full flex justify-between items-center mb-3 border-b border-slate-100 pb-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                          Stickers Vault
-                        </span>
-                        <button
-                          onClick={() => stickerInputRef.current.click()}
-                          className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg font-bold hover:bg-indigo-100 transition-colors shadow-sm"
-                        >
-                          <i className="fa-solid fa-plus mr-1"></i> Custom
-                        </button>
-                        <input
-                          type="file"
-                          ref={stickerInputRef}
-                          accept="image/*"
-                          className="hidden"
-                          onChange={handleAddSticker}
-                        />
-                      </div>
-                      {customStickers.length === 0 ? (
-                        <p className="text-xs text-slate-400 p-4 text-center w-full bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                          No custom stickers added. Click + Custom to upload.
-                        </p>
-                      ) : (
-                        customStickers.map((src, i) => (
-                          <img
-                            key={i}
-                            src={src}
-                            onClick={() => sendSticker(src)}
-                            className="w-14 h-14 object-cover cursor-pointer hover:scale-110 transition-transform bg-slate-50 rounded-xl p-1.5 border border-slate-200 shadow-sm"
-                          />
-                        ))
-                      )}
-                    </div>
-                  )}
-
-                  {pastedImage && (
-                    <div className="bg-white border border-indigo-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
-                      <div className="flex items-center gap-4">
-                        <img
-                          src={URL.createObjectURL(pastedImage)}
-                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 shadow-sm"
-                        />
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
-                            Clipboard Attachment
-                          </span>
-                          <span className="text-xs font-bold text-slate-600">
-                            Image ready to send
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={removePastedImage}
-                        className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
-                      >
-                        <i className="fa-solid fa-xmark"></i>
-                      </button>
-                    </div>
-                  )}
-
-                  {replyingToMessage && (
-                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between w-[95%] shadow-lg pointer-events-auto mb-2 animate-in slide-in-from-bottom-2 border-l-4 border-l-indigo-500">
-                      <div className="flex flex-col pl-2 border-l border-slate-100">
-                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">
-                          <i className="fa-solid fa-reply mr-1"></i> Replying to{" "}
-                          {replyingToMessage.profiles?.full_name || "Message"}
-                        </span>
-                        <span className="text-xs text-slate-600 font-medium truncate w-[300px] sm:w-[500px]">
-                          {replyingToMessage.message || "Media Attachment"}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => setReplyingToMessage(null)}
-                        className="text-slate-400 hover:text-rose-500 w-8 h-8 rounded-lg hover:bg-slate-50 flex items-center justify-center transition-colors"
-                      >
-                        <i className="fa-solid fa-xmark"></i>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4 border-t border-slate-200 bg-white z-10 relative">
-                  {editingMessage && (
-                    <div className="absolute -top-8 left-4 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase tracking-widest px-4 py-1.5 rounded-t-xl flex items-center gap-2 shadow-sm">
-                      <i className="fa-solid fa-pen"></i> Editing Message{" "}
-                      <button
-                        onClick={() => {
-                          setEditingMessage(null);
-                          setChatInput("");
-                        }}
-                        className="ml-3 hover:text-rose-600 transition-colors"
-                      >
-                        <i className="fa-solid fa-xmark"></i>
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="flex items-end gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-2 pr-3 focus-within:border-indigo-400 focus-within:bg-white transition-all shadow-sm">
-                    <button
-                      onClick={() => setShowStickerPicker(!showStickerPicker)}
-                      className={`w-10 h-10 flex items-center justify-center rounded-xl transition-colors shrink-0 mb-0.5 border ${showStickerPicker ? "bg-indigo-50 text-indigo-600 border-indigo-100" : "bg-white text-slate-400 hover:text-indigo-600 hover:bg-slate-100 border-slate-200 shadow-sm"}`}
-                      title="Stickers"
-                    >
-                      <i className="fa-regular fa-face-smile text-lg"></i>
-                    </button>
-                    <input
-                      type="file"
-                      ref={chatMediaInputRef}
-                      accept="image/*,video/*"
-                      className="hidden"
-                      onChange={handleChatMediaUpload}
-                    />
-                    <button
-                      onClick={() => chatMediaInputRef.current.click()}
-                      disabled={isSendingChat}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors shrink-0 mb-0.5 shadow-sm bg-white border border-slate-200"
-                      title="Upload Image/Video"
-                    >
-                      <i className="fa-solid fa-paperclip text-lg"></i>
-                    </button>
-                    <textarea
-                      ref={chatInputRef}
-                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium text-slate-900 px-2 py-3 resize-none custom-scrollbar outline-none"
-                      placeholder={
-                        editingMessage
-                          ? "Edit your message..."
-                          : `Message... (Ctrl+V to paste images)`
-                      }
-                      value={chatInput}
-                      rows={
-                        chatInput.split("\n").length > 1
-                          ? Math.min(chatInput.split("\n").length, 5)
-                          : 1
-                      }
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onPaste={handlePaste}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendChatMessage();
-                        }
-                      }}
-                      disabled={isSendingChat}
-                      style={{ maxHeight: "120px" }}
-                    />
-                    <button
-                      onClick={handleSendChatMessage}
-                      disabled={
-                        isSendingChat ||
-                        (!chatInput.trim() && !pastedImage && !isSendingChat)
-                      }
-                      className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed mb-0.5 shadow-sm"
-                    >
-                      {isSendingChat ? (
-                        <i className="fa-solid fa-spinner fa-spin"></i>
-                      ) : (
-                        <i className="fa-solid fa-paper-plane"></i>
-                      )}
-                    </button>
-                  </div>
-                </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
-          ) : (
-            /* ALL OTHER SCROLLING TABS */
-            <div className="flex-1 overflow-y-auto w-full custom-scrollbar pr-2 pb-10 p-4 sm:p-6 lg:p-8">
-              {/* SECTION: DASHBOARD */}
-              {activeTab === "dashboard" && (
-                <div className="space-y-8 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  {userProfile.role === "team_lead" &&
-                    userProfile.warning_count >= 3 && (
-                      <div className="bg-rose-600 text-white font-black text-[13px] py-3 px-4 rounded-xl shadow-md border border-rose-700 animate-in slide-in-from-top-2">
-                        <marquee
-                          className="tracking-[0.2em] uppercase"
-                          scrollamount="6"
-                        >
-                          YOU HAVE BROKEN RULES 3 TIMES HENCE YOU AND YOUR TEAM
-                          ARE INELIGIBLE FOR PAID INTERNSHIP.
-                        </marquee>
-                      </div>
-                    )}
+          )}
 
-                  <div
-                    className={`grid grid-cols-1 md:grid-cols-2 ${userProfile.role === "ai_engineer" ? "xl:grid-cols-3" : "xl:grid-cols-4"} gap-6 w-full`}
-                  >
-                    <div className="bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 text-2xl group-hover:scale-110 transition-transform">
-                          <i className="fa-solid fa-bars-progress"></i>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                            Total Tasks
-                          </p>
-                          <h3 className="text-3xl font-black text-slate-900">
-                            {tasks.length}
-                          </h3>
-                        </div>
-                      </div>
-                      <div className="flex items-center text-[11px] font-bold text-emerald-700 bg-emerald-50 w-fit px-3 py-1.5 rounded-lg border border-emerald-200">
-                        <i className="fa-solid fa-arrow-trend-up mr-1.5"></i>{" "}
-                        Active Processing
-                      </div>
-                    </div>
-
-                    <div className="bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600 text-2xl group-hover:scale-110 transition-transform">
-                          <i className="fa-solid fa-clipboard-check"></i>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                            Pending Approvals
-                          </p>
-                          <h3 className="text-3xl font-black text-slate-900">
-                            {
-                              tasks.filter(
-                                (t) =>
-                                  t.status === "pending_completion_approval",
-                              ).length
-                            }
-                          </h3>
-                        </div>
-                      </div>
-                      <div className="flex items-center text-[11px] font-bold text-purple-700 bg-purple-50 w-fit px-3 py-1.5 rounded-lg border border-purple-200">
-                        <i className="fa-regular fa-clock mr-1.5"></i> Awaiting
-                        Review
-                      </div>
-                    </div>
-
-                    <div className="bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-slate-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group">
-                      <div className="flex items-center gap-4 mb-4">
-                        <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 text-2xl group-hover:scale-110 transition-transform">
-                          <i className="fa-solid fa-bolt"></i>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                            Golden Directives
-                          </p>
-                          <h3 className="text-3xl font-black text-slate-900">
-                            {
-                              tasks.filter(
-                                (t) =>
-                                  t.is_admin_directive &&
-                                  t.status !== "completed",
-                              ).length
-                            }
-                          </h3>
-                        </div>
-                      </div>
-                      <div className="flex items-center text-[11px] font-bold text-rose-700 bg-rose-50 w-fit px-3 py-1.5 rounded-lg border border-rose-200">
-                        <i className="fa-solid fa-fire mr-1.5"></i> High
-                        Priority Action
-                      </div>
-                    </div>
-
-                    {userProfile.role === "admin" && (
-                      <div
-                        onClick={openAdminWarningsModal}
-                        className="cursor-pointer bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border border-slate-200 hover:border-rose-300 hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group"
-                      >
-                        <div className="flex items-center gap-4 mb-4">
-                          <div className="w-14 h-14 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 text-2xl group-hover:scale-110 transition-transform">
-                            <i className="fa-solid fa-gavel"></i>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                              All Warnings
-                            </p>
-                            <h3 className="text-3xl font-black text-slate-900">
-                              {allTeamsData.reduce((acc, team) => {
-                                const lead = Array.isArray(team.profiles)
-                                  ? team.profiles[0]
-                                  : team.profiles;
-                                return acc + (lead?.warning_count > 0 ? 1 : 0);
-                              }, 0)}{" "}
-                            </h3>
-                          </div>
-                        </div>
-                        <div className="flex items-center text-[11px] font-bold text-rose-700 bg-rose-50 w-fit px-3 py-1.5 rounded-lg border border-rose-200">
-                          <i className="fa-solid fa-users-viewfinder mr-1.5"></i>{" "}
-                          Manage Warnings
-                        </div>
-                      </div>
-                    )}
-
-                    {userProfile.role === "team_lead" && (
-                      <div
-                        onClick={openLeadWarningModal}
-                        className={`cursor-pointer bg-white rounded-[20px] shadow-sm hover:shadow-md p-6 flex flex-col justify-center border ${userProfile.warning_count > 0 ? "border-rose-300 hover:border-rose-400 bg-rose-50/50" : "border-slate-200 hover:border-slate-300"} hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group`}
-                      >
-                        <div className="flex items-center gap-4 mb-4">
-                          <div
-                            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform ${userProfile.warning_count > 0 ? "bg-rose-100 text-rose-600" : "bg-emerald-50 text-emerald-500"}`}
-                          >
-                            <i
-                              className={`fa-solid ${userProfile.warning_count > 0 ? "fa-circle-exclamation" : "fa-shield-check"}`}
-                            ></i>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
-                              Disciplinary
-                            </p>
-                            <h3 className="text-3xl font-black text-slate-900">
-                              {userProfile.warning_count || 0}/3
-                            </h3>
-                          </div>
-                        </div>
-                        <div
-                          className={`flex items-center text-[11px] font-bold w-fit px-3 py-1.5 rounded-lg border ${userProfile.warning_count > 0 ? "text-rose-700 bg-rose-100 border-rose-200" : "text-emerald-700 bg-emerald-50 border-emerald-200"}`}
-                        >
-                          <i className="fa-solid fa-circle-info mr-1.5"></i>{" "}
-                          View Details
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
-                    <div className="bg-white rounded-[24px] shadow-sm hover:shadow-md p-8 border border-slate-200 flex flex-col transition-all duration-300">
-                      <h3 className="text-xl font-extrabold text-slate-900 mb-8">
-                        {userProfile.role === "admin"
-                          ? "Division Task Distribution"
-                          : "Team Task Success Rate"}
-                      </h3>
-                      <div className="flex flex-col sm:flex-row items-center gap-10 w-full justify-around flex-1">
-                        {userProfile.role === "admin" ? (
-                          <>
-                            <div
-                              className="donut-chart shadow-sm border border-slate-100"
-                              style={{ background: adminConicGradient }}
-                            >
-                              <div className="donut-hole shadow-sm">
-                                <span className="text-3xl font-black text-slate-900">
-                                  {totalAdminTasks}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 w-full sm:w-auto">
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#6366f1] mr-3"></span>{" "}
-                                Core AI & Backend ({payalTasks})
-                              </div>
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#3b82f6] mr-3"></span>{" "}
-                                Tools & Integrations ({sushantTasks})
-                              </div>
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#f43f5e] mr-3"></span>{" "}
-                                QA & Operations ({pratikTasks})
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div
-                              className="donut-chart shadow-sm border border-slate-100"
-                              style={{ background: leadConicGradient }}
-                            >
-                              <div className="donut-hole shadow-sm">
-                                <span className="text-3xl font-black text-slate-900">
-                                  {totalLeadTasks}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200 w-full sm:w-auto">
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#10b981] mr-3"></span>{" "}
-                                Success / Approved ({successTasks})
-                              </div>
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#f59e0b] mr-3"></span>{" "}
-                                In Progress ({pendingTasks})
-                              </div>
-                              <div className="flex items-center text-sm font-bold text-slate-700">
-                                <span className="w-4 h-4 rounded-md shadow-sm bg-[#f43f5e] mr-3"></span>{" "}
-                                Failure / Rejected ({failTasks})
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 flex flex-col overflow-hidden h-[400px] transition-all duration-300 relative">
-                      <div className="absolute top-0 left-0 w-full h-1 bg-indigo-600"></div>
-                      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
-                        <h3 className="text-xl font-extrabold text-slate-900 flex items-center">
-                          <i className="fa-solid fa-bell mr-3 text-indigo-500"></i>{" "}
-                          Notifications
-                        </h3>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50">
-                        {unreadDashboardMessages.length === 0 ? (
-                          <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8">
-                            <i className="fa-regular fa-bell-slash text-5xl mb-4 text-slate-300"></i>
-                            <p className="text-sm font-bold">
-                              Network is silent. No unread messages.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {unreadDashboardMessages.map((msg, idx) => (
-                              <div
-                                key={idx}
-                                onClick={() => {
-                                  setActiveChatChannel(msg.channelId);
-                                  setActiveTab("chat");
-                                }}
-                                className="bg-white border border-slate-200 hover:border-indigo-300 hover:shadow-sm p-4 rounded-2xl cursor-pointer transition-all duration-200 flex gap-4 items-center group"
-                              >
-                                <div className="relative shrink-0">
-                                  <img
-                                    src={msg.channelAvatar}
-                                    className="w-12 h-12 rounded-full object-cover shadow-sm border border-slate-200 group-hover:scale-105 transition-transform"
-                                  />
-                                  {msg.unreadCount > 0 && (
-                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full border-2 border-white shadow-sm"></span>
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-baseline mb-1">
-                                    <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors truncate">
-                                      {msg.channelLabel}
-                                    </h4>
-                                    <span className="text-[10px] font-bold text-slate-500 ml-2 whitespace-nowrap bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md shadow-sm">
-                                      {msg.time}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-slate-500 truncate">
-                                    <span className="font-bold text-indigo-600">
-                                      {msg.senderName}:
-                                    </span>{" "}
-                                    {msg.text}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+          {/* TAB: STAFF DIRECTORY */}
+          {activeTab === "staff" && userProfile.role === "admin" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <div
+                className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} p-3 mb-6 flex flex-col sm:flex-row gap-3 items-center w-full`}
+              >
+                <div className="relative flex-1 w-full">
+                  <i
+                    className={`fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} text-sm`}
+                  ></i>
+                  <input
+                    type="text"
+                    placeholder="Search Staff..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`w-full pl-9 pr-3 py-2 ${t.bgMuted} border ${t.border} rounded text-sm font-medium focus:ring-1 focus:ring-blue-500 outline-none ${t.textMain}`}
+                  />
                 </div>
-              )}
+                <select
+                  className={`${t.bgMuted} border ${t.border} text-sm font-semibold rounded px-3 py-2 outline-none w-full sm:w-auto ${t.textMain}`}
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                >
+                  <option value="All">All Roles</option>
+                  <option value="admin">System Admin</option>
+                  <option value="team_lead">Lead</option>
+                  <option value="ai_engineer">Engineer</option>
+                </select>
+                <select
+                  className={`${t.bgMuted} border ${t.border} text-sm font-semibold rounded px-3 py-2 outline-none w-full sm:w-auto ${t.textMain}`}
+                  value={teamFilter}
+                  onChange={(e) => setTeamFilter(e.target.value)}
+                >
+                  <option value="All">All Divisions</option>
+                  {allTeamsData.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                  <option value="System Administration">System Admin</option>
+                  <option value="Unassigned">Unassigned</option>
+                </select>
+              </div>
 
-              {/* SECTION: TEAM MANAGEMENT */}
-              {activeTab === "team" && (
-                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
-                    {userProfile.role === "admin" && (
-                      <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 bg-white">
-                          <h3 className="text-lg font-black text-slate-900">
-                            Unassigned Personnel
-                          </h3>
-                        </div>
-                        <div className="p-4 bg-slate-50">
-                          {unassignedEngineers.length === 0 ? (
-                            <div className="text-center text-slate-400 py-8 font-bold text-sm">
-                              No unassigned personnel.
-                            </div>
-                          ) : (
-                            unassignedEngineers.map((eng) => (
-                              <div
-                                key={eng.id}
-                                className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between mb-3"
-                              >
-                                <span className="font-bold text-slate-900">
-                                  {eng.full_name}
-                                </span>
-                                <button
-                                  onClick={() =>
-                                    handleAssignToTeam(eng.id, eng.full_name)
-                                  }
-                                  className="text-xs bg-indigo-50 text-indigo-600 font-bold px-4 py-2 rounded-lg hover:bg-indigo-100 transition-colors border border-indigo-100 shadow-sm"
-                                >
-                                  Assign to Division
-                                </button>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    <div
-                      className={`${userProfile.role !== "admin" ? "lg:col-span-2" : ""} bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col overflow-hidden`}
+              <div
+                className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} overflow-x-auto w-full`}
+              >
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr
+                      className={`${t.bgMuted} text-[10px] uppercase ${t.textMuted} font-extrabold border-b ${t.border}`}
                     >
-                      <div className="p-6 border-b border-slate-100 bg-white">
-                        <h3 className="text-lg font-black text-slate-900">
-                          {userProfile.role === "admin"
-                            ? "Active Roster Overview"
-                            : "My Division Personnel"}
+                      <th className="px-5 py-3 tracking-widest">Personnel</th>
+                      <th className="px-5 py-3 tracking-widest">ID Log</th>
+                      <th className="px-5 py-3 tracking-widest">
+                        Status / Task
+                      </th>
+                      <th className="px-5 py-3 tracking-widest">Team</th>
+                      <th className="px-5 py-3 text-right tracking-widest">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm font-medium">
+                    {filteredStaff.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan="5"
+                          className={`px-5 py-10 text-center ${t.textMuted} font-semibold text-xs`}
+                        >
+                          No records matched your query.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStaff.map((staff) => (
+                        <tr
+                          key={staff.id}
+                          className={`border-b ${t.border} ${t.bgCardHover}`}
+                        >
+                          <td className="px-5 py-3 flex items-center gap-3">
+                            <img
+                              src={
+                                staff.avatar_url ||
+                                `https://ui-avatars.com/api/?name=${encodeURIComponent(staff.full_name)}&background=${theme === "dark" ? "1a1a1a" : "f1f5f9"}&color=${theme === "dark" ? "D4AF37" : "475569"}`
+                              }
+                              className={`w-8 h-8 rounded border ${t.border} object-cover`}
+                            />
+                            <div>
+                              <span
+                                className={`font-bold ${t.textMain} block text-xs`}
+                              >
+                                {staff.full_name}
+                              </span>
+                              <span
+                                className={`text-[9px] ${t.textMuted} font-bold uppercase tracking-widest`}
+                              >
+                                {staff.role.replace("_", " ")}
+                              </span>
+                            </div>
+                          </td>
+                          <td
+                            className={`px-5 py-3 font-mono ${t.textMuted} text-[10px] font-bold`}
+                          >
+                            {staff.staff_id}
+                          </td>
+                          <td
+                            className={`px-5 py-3 text-xs truncate max-w-[200px] font-semibold ${t.textMain}`}
+                          >
+                            {staff.current_task}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span
+                              className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${getDivisionStyle(staff.division)}`}
+                            >
+                              {staff.division}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() =>
+                                  handleViewStaffTasks(
+                                    staff.id,
+                                    staff.full_name,
+                                    staff.staff_id,
+                                  )
+                                }
+                                className={`border ${t.border} ${t.textMuted} ${t.bgCardHover} px-3 py-1.5 rounded text-[10px] font-bold shadow-sm uppercase tracking-wide transition-colors`}
+                              >
+                                History
+                              </button>
+                              {staff.id !== userProfile.id && (
+                                <button
+                                  onClick={() => handleBanStaff(staff)}
+                                  className={`border px-3 py-1.5 rounded text-[10px] font-bold shadow-sm uppercase tracking-wide transition-colors ${staff.ban_status !== "none" ? (theme === "dark" ? "bg-emerald-900/20 text-emerald-400 border-emerald-900" : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100") : theme === "dark" ? "bg-red-900/20 text-red-400 border-red-900" : "bg-red-50 text-red-700 border-red-200 hover:bg-red-100"}`}
+                                >
+                                  {staff.ban_status !== "none"
+                                    ? "Unban"
+                                    : "Suspend"}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: TEAM MANAGEMENT */}
+          {activeTab === "team" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-6">
+              {/* Header Action Bar */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <p className={`${t.textMuted} text-sm mt-1 font-medium`}>
+                    {userProfile.role === "admin"
+                      ? "Organize corporate divisions, appoint leaders, and allocate staff."
+                      : ""}
+                  </p>
+                </div>
+                {userProfile.role === "admin" && (
+                  <button
+                    onClick={handleCreateNewTeam}
+                    className={`px-4 py-2 ${t.primaryBg} ${t.primaryText} rounded text-xs font-bold ${t.primaryHover} transition-all shadow-sm flex items-center gap-2 uppercase tracking-wide`}
+                  >
+                    <i className="fa-solid fa-plus"></i> New Division
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-col lg:flex-row gap-6">
+                {/* Admin Only: Unassigned */}
+                {userProfile.role === "admin" &&
+                  unassignedEngineers.length > 0 && (
+                    <div
+                      className={`lg:w-1/3 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col self-start`}
+                    >
+                      <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
+                        <h3
+                          className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
+                        >
+                          Not in any team / Team not alloted
                         </h3>
                       </div>
-                      <div className="p-4 bg-slate-50">
-                        {userProfile.role === "admin" ? (
-                          allTeamsData.map((team) => {
-                            const leadProf = Array.isArray(team.profiles)
-                              ? team.profiles[0]
-                              : team.profiles;
-                            return (
-                              <div key={team.id} className="mb-6">
-                                <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-3 px-2 flex items-center gap-2">
-                                  <i className="fa-solid fa-users text-slate-300"></i>{" "}
-                                  {team.name}
-                                </h4>
-                                {leadProf && (
-                                  <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-between mb-2">
-                                    <div>
-                                      <span className="font-black text-indigo-900 block">
-                                        {leadProf.full_name}
-                                        <span className="text-[10px] text-rose-600 font-bold ml-2">
-                                          ({leadProf.warning_count || 0}/3
-                                          Warnings)
-                                        </span>
-                                      </span>
-                                      <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest">
-                                        Team Lead
-                                      </span>
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <button
-                                        onClick={() =>
-                                          handleWarnTeamLead(
-                                            leadProf.id,
-                                            leadProf.full_name,
-                                            leadProf.warning_count || 0,
-                                          )
-                                        }
-                                        className="text-xs bg-amber-50 border border-amber-200 text-amber-700 font-bold px-3 py-2 rounded-lg hover:bg-amber-100 transition-colors shadow-sm"
-                                        title="Issue Warning"
-                                      >
-                                        <i className="fa-solid fa-triangle-exclamation"></i>
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          handleAssignTaskToMember(
-                                            leadProf.id,
-                                            leadProf.full_name,
-                                          )
-                                        }
-                                        className="text-xs bg-indigo-600 border border-indigo-700 text-white font-bold px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-                                      >
-                                        <i className="fa-solid fa-plus mr-1"></i>{" "}
-                                        Assign Task
-                                      </button>
+                      <div className="p-3">
+                        {unassignedEngineers.map((eng) => (
+                          <div
+                            key={eng.id}
+                            className={`border ${t.border} p-3 rounded mb-2 flex flex-col gap-2 shadow-sm`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`font-bold ${t.textMain} text-xs`}
+                              >
+                                {eng.full_name}{" "}
+                                <span className="font-normal text-[9px] text-gray-500 uppercase ml-1 block mt-0.5">
+                                  ({eng.role.replace("_", " ")})
+                                </span>
+                              </span>
+                              <button
+                                onClick={() =>
+                                  handleAssignToTeam(eng.id, eng.full_name)
+                                }
+                                className={`text-[10px] ${t.accentBg} border ${theme === "dark" ? "border-[#D4AF37]/50" : "border-purple-200"} ${t.accentText} px-2 py-1 rounded font-bold hover:opacity-80 transition-colors uppercase`}
+                              >
+                                Assign
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Division Lists */}
+                <div
+                  className={`flex-1 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col`}
+                >
+                  <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
+                    <h3
+                      className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
+                    >
+                      {userProfile.role === "admin"
+                        ? "Division Architecture"
+                        : "My Team"}
+                    </h3>
+                  </div>
+                  <div className="p-5">
+                    {userProfile.role === "admin" ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {allTeamsData.map((team, idx) => {
+                          const leadProf = Array.isArray(team.profiles)
+                            ? team.profiles[0]
+                            : team.profiles;
+                          const teamColor = getDynamicTeamColor(idx, team.name);
+                          return (
+                            <div
+                              key={team.id}
+                              className={`border ${t.border} rounded shadow-sm ${t.bgMuted} p-4 flex flex-col justify-between`}
+                            >
+                              <div>
+                                <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
+                                  <h4
+                                    className={`text-xs font-black uppercase tracking-widest flex items-center gap-2`}
+                                    style={{ color: teamColor }}
+                                  >
+                                    <span
+                                      className="w-2 h-2 rounded-full"
+                                      style={{ backgroundColor: teamColor }}
+                                    ></span>
+                                    {team.name}
+                                  </h4>
+                                  <button
+                                    onClick={() =>
+                                      handleDeleteTeam(team.id, team.name)
+                                    }
+                                    className="text-[10px] text-slate-400 hover:text-red-500"
+                                    title="Delete Team"
+                                  >
+                                    <i className="fa-solid fa-trash-can"></i>
+                                  </button>
+                                </div>
+
+                                {/* Lead Section */}
+                                <div
+                                  className={`${t.bgCard} border ${t.border} p-3 rounded shadow-sm mb-3`}
+                                >
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span
+                                      className={`text-[10px] ${t.accentText} font-bold uppercase tracking-widest block`}
+                                    >
+                                      Supervisor
+                                    </span>
+                                    <button
+                                      onClick={() =>
+                                        handleReassignTeamLead(
+                                          team.id,
+                                          team.name,
+                                        )
+                                      }
+                                      className={`text-[9px] ${t.textMuted} hover:underline font-bold uppercase`}
+                                      title="Change Supervisor"
+                                    >
+                                      Change
+                                    </button>
+                                  </div>
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span
+                                      className={`font-bold ${t.textMain} text-xs`}
+                                    >
+                                      {leadProf
+                                        ? leadProf.full_name
+                                        : "No Supervisor"}
+                                    </span>
+                                    <div className="flex gap-1.5">
+                                      {leadProf && (
+                                        <>
+                                          <button
+                                            onClick={() =>
+                                              handleAssignTaskToMember(
+                                                leadProf.id,
+                                                leadProf.full_name,
+                                              )
+                                            }
+                                            className={`text-[9px] ${t.accentBg} ${t.accentText} border ${t.border} px-1.5 py-0.5 rounded font-bold uppercase`}
+                                            title="Assign Task"
+                                          >
+                                            <i className="fa-solid fa-plus"></i>{" "}
+                                            Task
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleWarnTeamLead(
+                                                leadProf.id,
+                                                leadProf.full_name,
+                                                leadProf.warning_count || 0,
+                                              )
+                                            }
+                                            className={`text-[9px] ${theme === "dark" ? "bg-red-900/20 text-red-400 border-red-900" : "bg-red-50 border-red-200 text-red-600"} px-1.5 py-0.5 rounded font-bold uppercase border`}
+                                            title="Warn"
+                                          >
+                                            <i className="fa-solid fa-gavel"></i>
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleRemoveFromTeam(
+                                                leadProf.id,
+                                                true,
+                                                team.id,
+                                              )
+                                            }
+                                            className={`text-[9px] ${t.bgMuted} border ${t.border} ${t.textMuted} hover:text-red-500 px-1.5 py-0.5 rounded font-bold uppercase`}
+                                            title="Remove"
+                                          >
+                                            <i className="fa-solid fa-xmark"></i>
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
-                                )}
-                                {team.team_members &&
-                                team.team_members.length > 0 ? (
-                                  team.team_members.map((tm) => {
+                                </div>
+
+                                {/* Members Section */}
+                                <div className="space-y-1.5">
+                                  {team.team_members?.map((tm) => {
                                     const engProf = Array.isArray(tm.profiles)
                                       ? tm.profiles[0]
                                       : tm.profiles;
                                     return (
                                       <div
                                         key={tm.user_id}
-                                        className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between mb-2"
+                                        className={`${t.bgCard} border ${t.border} p-2 rounded flex justify-between items-center`}
                                       >
-                                        <span className="font-bold text-slate-900">
+                                        <span
+                                          className={`font-semibold ${t.textMain} text-[11px]`}
+                                        >
                                           {engProf?.full_name || "Unknown"}
                                         </span>
-                                        <button
-                                          onClick={() =>
-                                            handleAssignTaskToMember(
-                                              tm.user_id,
-                                              engProf?.full_name || "Unknown",
-                                            )
-                                          }
-                                          className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-600 font-bold px-4 py-2 rounded-lg hover:bg-emerald-100 transition-colors shadow-sm"
-                                        >
-                                          <i className="fa-solid fa-plus mr-1"></i>{" "}
-                                          Assign Task
-                                        </button>
+                                        <div className="flex gap-1">
+                                          <button
+                                            onClick={() =>
+                                              handleAssignTaskToMember(
+                                                tm.user_id,
+                                                engProf?.full_name,
+                                              )
+                                            }
+                                            className={`text-[9px] ${t.accentText} hover:underline px-1 rounded`}
+                                            title="Assign Task"
+                                          >
+                                            <i className="fa-solid fa-plus"></i>
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleRemoveFromTeam(
+                                                tm.user_id,
+                                                false,
+                                                team.id,
+                                              )
+                                            }
+                                            className={`text-[9px] ${t.textMuted} hover:text-red-500 border border-transparent ${t.borderHover} rounded px-1.5 ${t.bgMuted}`}
+                                            title="Remove"
+                                          >
+                                            <i className="fa-solid fa-xmark"></i>
+                                          </button>
+                                        </div>
                                       </div>
                                     );
-                                  })
-                                ) : (
-                                  <p className="text-xs font-bold text-slate-400 px-2 italic">
-                                    No personnel deployed.
-                                  </p>
-                                )}
+                                  })}
+                                </div>
                               </div>
-                            );
-                          })
-                        ) : teamMembers.length > 0 ? (
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {teamMembers.length === 0 ? (
+                          <p
+                            className={`text-xs font-semibold ${t.textMuted} italic`}
+                          >
+                            No assigned personnel.
+                          </p>
+                        ) : (
                           teamMembers.map((tm) => (
                             <div
                               key={tm.id}
-                              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between mb-3"
+                              className={`border ${t.border} rounded ${t.bgCard} p-4 flex justify-between items-center shadow-sm`}
                             >
-                              <span className="font-bold text-slate-900">
+                              <span
+                                className={`font-bold ${t.textMain} text-sm`}
+                              >
                                 {tm.name}
                               </span>
                               <button
                                 onClick={() =>
                                   handleAssignTaskToMember(tm.id, tm.name)
                                 }
-                                className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-600 font-bold px-4 py-2 rounded-lg hover:bg-emerald-100 transition-colors shadow-sm"
+                                className={`text-[10px] ${t.accentBg} border ${theme === "dark" ? "border-[#D4AF37]/50" : "border-purple-200"} ${t.accentText} px-3 py-1.5 rounded font-bold hover:opacity-80 transition-colors uppercase tracking-widest shadow-sm`}
                               >
-                                <i className="fa-solid fa-plus mr-1"></i> Assign
-                                Task
+                                Issue Task
                               </button>
                             </div>
                           ))
-                        ) : (
-                          <p className="text-sm font-bold text-slate-400 text-center py-8">
-                            Your division roster is empty.
-                          </p>
                         )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION: STAFF DIRECTORY */}
-              {activeTab === "staff" && userProfile.role === "admin" && (
-                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <div>
-                    <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
-                      Staff Directory
-                    </h1>
-                    <p className="text-slate-500 text-sm mt-1 font-medium">
-                      Comprehensive registry of all corporate personnel.
-                    </p>
-                  </div>
-
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-4 flex flex-col md:flex-row gap-4 items-center w-full">
-                    <div className="flex-1 w-full">
-                      <div className="relative">
-                        <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                        <input
-                          type="text"
-                          placeholder="Search by Name or Staff ID..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-4 w-full md:w-auto">
-                      <select
-                        className="bg-slate-50 text-slate-900 border border-slate-200 text-sm font-bold rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm"
-                        value={roleFilter}
-                        onChange={(e) => setRoleFilter(e.target.value)}
-                      >
-                        <option value="All">All Roles</option>
-                        <option value="admin">Admin</option>
-                        <option value="team_lead">Team Lead</option>
-                        <option value="ai_engineer">AI Engineer</option>
-                      </select>
-                      <select
-                        className="bg-slate-50 text-slate-900 border border-slate-200 text-sm font-bold rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-sm"
-                        value={teamFilter}
-                        onChange={(e) => setTeamFilter(e.target.value)}
-                      >
-                        <option value="All">All Divisions</option>
-                        <option value="Core AI & Backend">
-                          Core AI & Backend
-                        </option>
-                        <option value="Tools & Integrations">
-                          Tools & Integrations
-                        </option>
-                        <option value="QA & Operations">QA & Operations</option>
-                        <option value="System Administration">
-                          System Admin
-                        </option>
-                        <option value="Unassigned">Unassigned</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto w-full">
-                    <table className="w-full text-left border-collapse min-w-[1000px]">
-                      <thead>
-                        <tr className="bg-slate-50 text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-200">
-                          <th className="px-6 py-5 tracking-widest">
-                            Personnel
-                          </th>
-                          <th className="px-6 py-5 tracking-widest">
-                            Staff ID
-                          </th>
-                          <th className="px-6 py-5 tracking-widest">
-                            Current Task
-                          </th>
-                          <th className="px-6 py-5 tracking-widest">
-                            Division / Team
-                          </th>
-                          <th className="px-6 py-5 text-right tracking-widest">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm font-medium">
-                        {filteredStaff.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan="5"
-                              className="px-6 py-16 text-center text-slate-400"
-                            >
-                              <i className="fa-solid fa-id-card-clip text-5xl mb-4 opacity-50"></i>
-                              <p className="font-bold text-lg text-slate-600">
-                                No personnel found
-                              </p>
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredStaff.map((staff) => (
-                            <tr
-                              key={staff.id}
-                              className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                            >
-                              <td className="px-6 py-4 flex items-center gap-4">
-                                {staff.avatar_url ? (
-                                  <img
-                                    src={staff.avatar_url}
-                                    alt="Avatar"
-                                    className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-sm"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shadow-sm">
-                                    {staff.full_name.charAt(0)}
-                                  </div>
-                                )}
-                                <div>
-                                  <span className="font-extrabold text-slate-900 block">
-                                    {staff.full_name}
-                                  </span>
-                                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                                    {staff.role.replace("_", " ")}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 font-mono text-slate-500 text-xs font-bold">
-                                {staff.staff_id}
-                              </td>
-                              <td className="px-6 py-4">
-                                <span
-                                  className={`text-xs font-bold truncate max-w-[200px] block ${staff.current_task === "Idle / Monitored" ? "text-slate-400" : "text-slate-900"}`}
-                                >
-                                  {staff.current_task}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4">
-                                <span
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${getDivisionStyle(staff.division)}`}
-                                >
-                                  {staff.division}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    onClick={() =>
-                                      handleViewStaffTasks(
-                                        staff.id,
-                                        staff.full_name,
-                                        staff.staff_id,
-                                      )
-                                    }
-                                    className="bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm"
-                                  >
-                                    <i className="fa-solid fa-list-check mr-1"></i>{" "}
-                                    Tasks
-                                  </button>
-                                  {staff.id !== userProfile.id && (
-                                    <button
-                                      onClick={() => handleBanStaff(staff)}
-                                      className={`${staff.ban_status !== "none" ? "bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100" : "bg-rose-50 border-rose-100 text-rose-700 hover:bg-rose-100"} border px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm`}
-                                    >
-                                      <i
-                                        className={`fa-solid ${staff.ban_status !== "none" ? "fa-unlock" : "fa-ban"} mr-1`}
-                                      ></i>{" "}
-                                      {staff.ban_status !== "none"
-                                        ? "Revoke"
-                                        : "Block"}
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION: DEPARTMENTS */}
-              {activeTab === "departments" && userProfile.role === "admin" && (
-                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8 w-full">
-                    {allTeamsData.map((team) => {
-                      const leadProf = Array.isArray(team.profiles)
-                        ? team.profiles[0]
-                        : team.profiles;
-                      return (
-                        <div
-                          key={team.id}
-                          className="bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 p-8 flex flex-col justify-between transition-shadow"
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
-                              <h3 className="text-xl font-black text-slate-900">
-                                {team.name}
-                              </h3>
-                              <span className="px-3 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                Active
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">
-                              Team Lead
-                            </p>
-                            <p className="text-sm font-bold text-slate-900 mb-6 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200 shadow-sm">
-                              <i className="fa-solid fa-user-tie mr-3 text-indigo-500"></i>{" "}
-                              {leadProf?.full_name || "Unassigned Lead"}
-                            </p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-3">
-                              Assigned Operatives
-                            </p>
-                            <ul className="space-y-2 mb-4">
-                              {team.team_members &&
-                              team.team_members.length > 0 ? (
-                                team.team_members.map((tm) => {
-                                  const engProf = Array.isArray(tm.profiles)
-                                    ? tm.profiles[0]
-                                    : tm.profiles;
-                                  return (
-                                    <li
-                                      key={tm.user_id}
-                                      className="text-xs font-bold text-slate-700 bg-white border border-slate-200 px-4 py-2.5 rounded-xl flex items-center justify-between shadow-sm"
-                                    >
-                                      <span>
-                                        {engProf?.full_name || "Unknown"}
-                                      </span>
-                                      <span className="text-[9px] uppercase bg-slate-100 border border-slate-200 text-slate-500 px-2 py-1 rounded-md font-black">
-                                        {engProf?.role?.replace("_", " ")}
-                                      </span>
-                                    </li>
-                                  );
-                                })
-                              ) : (
-                                <li className="text-xs font-semibold text-slate-400 italic bg-slate-50 border border-slate-200 p-4 rounded-xl text-center shadow-sm">
-                                  No members deployed in this division yet.
-                                </li>
-                              )}
-                            </ul>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION: REPORTS */}
-              {activeTab === "reports" && (
-                <div className="flex flex-col space-y-6 animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  {userProfile.role === "team_lead" && (
-                    <div className="bg-rose-50 border border-rose-200 border-l-4 border-l-rose-500 p-5 rounded-r-2xl rounded-l-md shadow-sm">
-                      <div className="flex items-start">
-                        <i className="fa-solid fa-triangle-exclamation text-rose-600 text-2xl mr-4 mt-0.5"></i>
-                        <p className="text-rose-900 font-semibold text-sm leading-relaxed">
-                          <strong className="text-rose-700 tracking-wide uppercase">
-                            CRITICAL DIRECTIVE:
-                          </strong>{" "}
-                          You have to submit the report of the updates and all
-                          those things on a bi-weekly basis. <br />
-                          <span className="font-bold block mt-2 text-rose-800">
-                            (Means you have to upload the report every 2nd week
-                            of Sunday till midnight 11:59 PM. If this rule gets
-                            broken, you and your team become ineligible for the
-                            paid internship).
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
-                    {userProfile.role === "team_lead" && (
-                      <div className="lg:col-span-1 bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 p-8 flex flex-col transition-all">
-                        <h3 className="text-lg font-black text-slate-900 mb-6 border-b border-slate-100 pb-4">
-                          Upload New Report
-                        </h3>
-                        <div
-                          className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-[20px] bg-slate-50 transition-colors p-8 text-center cursor-pointer min-h-[250px]"
-                          onClick={() => fileInputRef.current.click()}
-                        >
-                          <i className="fa-solid fa-cloud-arrow-up text-5xl text-indigo-500 mb-4"></i>
-                          <p className="text-sm font-bold text-slate-900 mb-1">
-                            Click to Upload PDF
-                          </p>
-                          <p className="text-xs font-semibold text-slate-500 mb-6">
-                            Max file size: 10MB
-                          </p>
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            accept="application/pdf"
-                            className="hidden"
-                            onChange={handleFileUpload}
-                            disabled={isUploading}
-                          />
-                          <button
-                            disabled={isUploading}
-                            className={`bg-indigo-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${isUploading ? "opacity-50 cursor-not-allowed" : "hover:bg-indigo-700"}`}
-                          >
-                            {isUploading ? (
-                              <>
-                                {" "}
-                                <i className="fa-solid fa-spinner fa-spin mr-2"></i>{" "}
-                                Uploading...{" "}
-                              </>
-                            ) : (
-                              "Browse Files"
-                            )}
-                          </button>
-                        </div>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: DEPARTMENTS (Admin Only visual cards) */}
+          {activeTab === "departments" && userProfile.role === "admin" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <h1
+                className={`text-2xl font-bold ${t.textMain} tracking-tight mb-6`}
+              >
+                Structural Organization
+              </h1>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {allTeamsData.map((team, idx) => {
+                  const leadProf = Array.isArray(team.profiles)
+                    ? team.profiles[0]
+                    : team.profiles;
+                  const teamColor = getDynamicTeamColor(idx, team.name);
+                  return (
                     <div
-                      className={`${userProfile.role === "team_lead" ? "lg:col-span-2" : "lg:col-span-3"} bg-white rounded-[24px] shadow-sm hover:shadow-md border border-slate-200 overflow-hidden flex flex-col transition-all w-full`}
+                      key={team.id}
+                      className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} p-6 flex flex-col`}
                     >
-                      <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
-                        <h3 className="text-lg font-black text-slate-900">
-                          Submitted Reports Registry
-                        </h3>
-                      </div>
-                      <div className="overflow-x-auto w-full bg-white">
-                        {reports.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center min-h-[300px] text-center p-8 bg-slate-50">
-                            <i className="fa-solid fa-folder-open text-6xl text-slate-300 mb-4"></i>
-                            <p className="text-lg font-bold text-slate-600">
-                              No reports found in the registry.
-                            </p>
-                          </div>
-                        ) : (
-                          <table className="w-full text-left border-collapse min-w-[700px]">
-                            <thead>
-                              <tr className="bg-slate-50 text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-200">
-                                <th className="px-6 py-4 tracking-widest">
-                                  Document Name
-                                </th>
-                                <th className="px-6 py-4 tracking-widest">
-                                  Division Label
-                                </th>
-                                <th className="px-6 py-4 tracking-widest">
-                                  Submitted By
-                                </th>
-                                <th className="px-6 py-4 tracking-widest">
-                                  Status
-                                </th>
-                                <th className="px-6 py-4 text-right tracking-widest">
-                                  Admin Actions
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="text-sm font-medium">
-                              {reports.map((report) => {
-                                const teamData = Array.isArray(report.teams)
-                                  ? report.teams[0]
-                                  : report.teams;
-                                const profData = Array.isArray(report.profiles)
-                                  ? report.profiles[0]
-                                  : report.profiles;
-                                return (
-                                  <tr
-                                    key={report.id}
-                                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                                  >
-                                    <td className="px-6 py-4">
-                                      <a
-                                        href={report.file_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="font-bold text-indigo-600 hover:text-indigo-800 flex items-center transition-colors"
-                                      >
-                                        <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-rose-500 mr-3 shadow-sm">
-                                          <i className="fa-solid fa-file-pdf"></i>
-                                        </div>
-                                        {report.file_name}
-                                      </a>
-                                      <div className="text-[10px] font-bold text-slate-400 mt-1.5 ml-11">
-                                        {new Date(
-                                          report.created_at,
-                                        ).toLocaleString()}
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <span className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">
-                                        {teamData?.name || "Unknown Division"}
-                                      </span>
-                                    </td>
-                                    <td className="px-6 py-4 text-slate-900 font-bold">
-                                      {profData?.full_name || "Unknown"}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                      <span
-                                        className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-widest shadow-sm ${report.status === "pending_approval" ? "bg-amber-50 border-amber-200 text-amber-700" : report.status === "approved" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-rose-50 border-rose-200 text-rose-700"}`}
-                                      >
-                                        {report.status.replace("_", " ")}
-                                      </span>
-                                      {report.status === "rejected" && (
-                                        <p className="text-[10px] text-rose-600 mt-2 font-bold max-w-xs leading-snug">
-                                          Note: {report.admin_feedback}
-                                        </p>
-                                      )}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                      <div className="flex justify-end items-center gap-3">
-                                        <a
-                                          href={report.file_url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="text-slate-500 hover:text-indigo-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm transition-colors font-bold text-xs"
-                                          title="View PDF"
-                                        >
-                                          <i className="fa-solid fa-eye mr-1"></i>{" "}
-                                          View
-                                        </a>
-                                        {userProfile.role === "admin" &&
-                                          report.status ===
-                                            "pending_approval" && (
-                                            <>
-                                              <button
-                                                onClick={() =>
-                                                  handleApproveReport(
-                                                    report.id,
-                                                    profData?.full_name,
-                                                    teamData?.name,
-                                                    report.lead_id,
-                                                  )
-                                                }
-                                                className="bg-white border border-slate-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300 w-8 h-8 rounded-lg shadow-sm transition-colors"
-                                                title="Approve"
-                                              >
-                                                <i className="fa-solid fa-check"></i>
-                                              </button>
-                                              <button
-                                                onClick={() =>
-                                                  handleRejectReport(
-                                                    report.id,
-                                                    profData?.full_name,
-                                                    teamData?.name,
-                                                    report.lead_id,
-                                                  )
-                                                }
-                                                className="bg-white border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 w-8 h-8 rounded-lg shadow-sm transition-colors"
-                                                title="Reject"
-                                              >
-                                                <i className="fa-solid fa-xmark"></i>
-                                              </button>
-                                            </>
-                                          )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION: TASKS */}
-              {activeTab === "tasks" && (
-                <div className="flex flex-col animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <div className="flex justify-between items-end mb-8 w-full">
-                    <div>
-                      <h1 className="text-[32px] font-black text-slate-900 tracking-tight">
-                        Task Manager
-                      </h1>
-                      <p className="text-slate-500 text-sm mt-1 font-medium">
-                        {userProfile.role === "admin"
-                          ? "Dispatch and oversee global operational directives."
-                          : "Manage assigned directives. Golden tasks are high priority."}
-                      </p>
-                    </div>
-                    {userProfile.role === "admin" && (
-                      <button
-                        onClick={handleAdminDispatchDirective}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl text-sm font-black shadow-sm transition-all flex items-center tracking-wide uppercase"
+                      <div
+                        className={`flex justify-between items-start border-b ${t.border} pb-3 mb-4`}
                       >
-                        <i className="fa-solid fa-bolt mr-2 text-amber-300"></i>{" "}
-                        Notify All Divisions
-                      </button>
-                    )}
-                  </div>
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 overflow-x-auto w-full">
-                    {loadingTasks ? (
-                      <div className="flex items-center justify-center h-64 text-indigo-600">
-                        <i className="fa-solid fa-circle-notch fa-spin text-4xl"></i>
-                      </div>
-                    ) : tasks.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center min-h-[300px] text-center bg-slate-50">
-                        <i className="fa-solid fa-check-double text-6xl text-emerald-500 mb-5"></i>
-                        <h3 className="text-2xl font-black text-slate-900">
-                          Queue Cleared
+                        <h3
+                          className={`font-bold ${t.textMain} text-base flex items-center gap-2`}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: teamColor }}
+                          ></span>
+                          {team.name}
                         </h3>
-                        <p className="text-sm font-medium text-slate-500 mt-2">
-                          All operational directives have been processed.
-                        </p>
+                        <span
+                          className={`text-[9px] ${theme === "dark" ? "bg-emerald-900/20 border-emerald-900 text-emerald-400" : "bg-emerald-50 text-emerald-700 border-emerald-200"} px-2 py-0.5 rounded font-black uppercase tracking-widest border`}
+                        >
+                          Active
+                        </span>
+                      </div>
+                      <div className="mb-4">
+                        <span
+                          className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-widest block mb-1`}
+                        >
+                          Director
+                        </span>
+                        <div
+                          className={`${t.bgMuted} border ${t.border} px-3 py-2 rounded text-xs font-bold ${t.textMain}`}
+                        >
+                          <i
+                            className={`fa-solid fa-user-tie ${t.accentText} mr-2`}
+                          ></i>
+                          {leadProf?.full_name || "N/A"}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <span
+                          className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-widest block mb-2`}
+                        >
+                          Deployed Staff
+                        </span>
+                        <ul className="space-y-1">
+                          {team.team_members?.length > 0 ? (
+                            team.team_members.map((tm) => {
+                              const eng = Array.isArray(tm.profiles)
+                                ? tm.profiles[0]
+                                : tm.profiles;
+                              return (
+                                <li
+                                  key={tm.user_id}
+                                  className={`${t.bgCard} border ${t.border} px-2 py-1.5 rounded text-[11px] font-semibold ${t.textMuted} shadow-sm flex justify-between`}
+                                >
+                                  <span className={t.textMain}>
+                                    {eng?.full_name}
+                                  </span>{" "}
+                                  <span className="text-[9px] opacity-70">
+                                    {eng?.role.replace("_", " ")}
+                                  </span>
+                                </li>
+                              );
+                            })
+                          ) : (
+                            <li className={`text-[11px] ${t.textMuted} italic`}>
+                              Empty Roster
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: REPORTS */}
+          {activeTab === "reports" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Upload Section */}
+                {userProfile.role === "team_lead" && (
+                  <div
+                    className={`lg:col-span-1 ${t.bgCard} rounded-lg shadow-sm border ${t.border} p-5 flex flex-col`}
+                  >
+                    <h3
+                      className={`font-bold ${t.textMain} text-sm uppercase tracking-wide border-b ${t.border} pb-3 mb-4`}
+                    >
+                      Submit Report
+                    </h3>
+                    <div
+                      onClick={() => fileInputRef.current.click()}
+                      className={`flex-1 border-2 border-dashed ${theme === "dark" ? "border-[#D4AF37]/30 hover:border-[#D4AF37] bg-[#D4AF37]/5" : "border-slate-300 hover:border-purple-400 bg-slate-50 hover:bg-purple-50/30"} rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer transition-colors text-center min-h-[200px]`}
+                    >
+                      <i
+                        className={`fa-solid fa-cloud-arrow-up text-4xl ${t.textMuted} mb-3`}
+                      ></i>
+                      <p className={`text-sm font-bold ${t.textMain}`}>
+                        Select PDF File
+                      </p>
+                      <p
+                        className={`text-[10px] ${t.textMuted} font-semibold mt-1`}
+                      >
+                        10MB Limit
+                      </p>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                      />
+                      <button
+                        disabled={isUploading}
+                        className={`mt-4 ${t.primaryBg} ${t.primaryText} px-4 py-1.5 rounded text-xs font-bold disabled:opacity-50 shadow-sm`}
+                      >
+                        {isUploading ? (
+                          <>
+                            <i className="fa-solid fa-spinner fa-spin mr-1"></i>{" "}
+                            Uploading...
+                          </>
+                        ) : (
+                          "Browse"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Reports Table */}
+                <div
+                  className={`${userProfile.role === "admin" ? "lg:col-span-3" : "lg:col-span-2"} ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col overflow-hidden`}
+                >
+                  <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
+                    <h3
+                      className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
+                    >
+                      Submission
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    {reports.length === 0 ? (
+                      <div
+                        className={`p-10 text-center ${t.textMuted} font-semibold text-sm`}
+                      >
+                        No documentation found.
                       </div>
                     ) : (
-                      <table className="w-full text-left border-collapse min-w-[800px]">
+                      <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead>
-                          <tr className="bg-slate-50 text-[11px] uppercase text-slate-500 font-extrabold border-b border-slate-200">
-                            <th className="px-6 py-5 tracking-widest">
-                              Directive Info
+                          <tr
+                            className={`${t.bgMuted} text-[10px] uppercase ${t.textMuted} font-extrabold border-b ${t.border}`}
+                          >
+                            <th className="px-5 py-3 tracking-widest">
+                              Document
                             </th>
-                            <th className="px-6 py-5 tracking-widest">
-                              Division / Team
+                            <th className="px-5 py-3 tracking-widest">
+                              Division
                             </th>
-                            <th className="px-6 py-5 tracking-widest">
-                              Assigned To
+                            <th className="px-5 py-3 tracking-widest">
+                              Submitter
                             </th>
-                            <th className="px-6 py-5 tracking-widest">
-                              Deadline
+                            <th className="px-5 py-3 tracking-widest">
+                              Status
                             </th>
-                            <th className="px-6 py-5 tracking-widest">
-                              Status / Feedback
-                            </th>
-                            <th className="px-6 py-5 text-right tracking-widest">
+                            <th className="px-5 py-3 text-right tracking-widest">
                               Actions
                             </th>
                           </tr>
                         </thead>
                         <tbody className="text-sm font-medium">
-                          {tasks.map((task) => (
-                            <tr
-                              key={task.id}
-                              className={`border-b transition-colors ${task.is_admin_directive ? "bg-amber-50/50 hover:bg-amber-50 border-l-4 border-l-amber-400 border-b-slate-100" : "border-slate-100 hover:bg-slate-50 border-l-4 border-l-transparent"}`}
-                            >
-                              <td className="px-6 py-5">
-                                <div
-                                  className={`font-black text-base tracking-tight ${task.is_admin_directive ? "text-amber-700" : "text-slate-900"}`}
-                                >
-                                  {task.is_admin_directive && (
-                                    <i className="fa-solid fa-star text-amber-500 mr-2 text-sm drop-shadow-sm"></i>
-                                  )}
-                                  {task.title}
-                                </div>
-                                {task.file_url && (
+                          {reports.map((report) => {
+                            const teamData = Array.isArray(report.teams)
+                              ? report.teams[0]
+                              : report.teams;
+                            const profData = Array.isArray(report.profiles)
+                              ? report.profiles[0]
+                              : report.profiles;
+                            return (
+                              <tr
+                                key={report.id}
+                                className={`border-b ${t.border} ${t.bgCardHover}`}
+                              >
+                                <td className="px-5 py-3">
                                   <a
-                                    href={task.file_url}
+                                    href={report.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[11px] text-slate-600 hover:text-indigo-600 mt-2 flex items-center font-bold w-fit bg-white border border-slate-200 px-2.5 py-1 rounded-md transition-colors shadow-sm"
+                                    className={`font-bold ${t.accentText} hover:underline flex items-center text-xs`}
                                   >
-                                    <i className="fa-solid fa-file-pdf text-rose-500 mr-1.5"></i>{" "}
-                                    View Directive PDF
+                                    <i className="fa-solid fa-file-pdf text-red-500 mr-2"></i>{" "}
+                                    {report.file_name}
                                   </a>
-                                )}
-                              </td>
-                              <td className="px-6 py-5">
-                                <span
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest ${getDivisionStyle(task.team)} border shadow-sm`}
-                                >
-                                  {task.team}
-                                </span>
-                              </td>
-                              <td className="px-6 py-5 text-slate-900 font-bold">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-[10px] text-slate-700 font-bold">
-                                    {task.assignedToName?.charAt(0)}
+                                  <div
+                                    className={`text-[9px] ${t.textMuted} mt-1 ml-5 font-bold uppercase`}
+                                  >
+                                    {new Date(
+                                      report.created_at,
+                                    ).toLocaleString()}
                                   </div>
-                                  {task.assignedToName}
-                                </div>
-                              </td>
-                              <td className="px-6 py-5">
-                                {task.deadline ? (
+                                </td>
+                                <td
+                                  className={`px-5 py-3 text-[10px] font-bold ${t.textMuted} uppercase`}
+                                >
+                                  {teamData?.name || "N/A"}
+                                </td>
+                                <td
+                                  className={`px-5 py-3 text-xs font-bold ${t.textMain}`}
+                                >
+                                  {profData?.full_name || "N/A"}
+                                </td>
+                                <td className="px-5 py-3">
                                   <span
-                                    className={
-                                      new Date(task.deadline) < new Date() &&
-                                      task.status !== "completed" &&
-                                      task.status !== "approved"
-                                        ? "text-rose-600 font-bold flex items-center gap-1.5"
-                                        : "text-slate-600 font-bold flex items-center gap-1.5"
-                                    }
+                                    className={`px-2 py-1 border rounded text-[9px] font-black uppercase tracking-widest ${report.status === "pending_approval" ? (theme === "dark" ? "bg-amber-900/20 text-amber-400 border-amber-900" : "bg-amber-50 border-amber-200 text-amber-700") : report.status === "approved" ? (theme === "dark" ? "bg-emerald-900/20 text-emerald-400 border-emerald-900" : "bg-emerald-50 border-emerald-200 text-emerald-700") : theme === "dark" ? "bg-red-900/20 text-red-400 border-red-900" : "bg-red-50 border-red-200 text-red-700"}`}
                                   >
-                                    {new Date(task.deadline) < new Date() &&
-                                      task.status !== "completed" &&
-                                      task.status !== "approved" && (
-                                        <i className="fa-solid fa-triangle-exclamation"></i>
+                                    {report.status.replace("_", " ")}
+                                  </span>
+                                  {report.status === "rejected" && (
+                                    <p className="text-[9px] text-red-500 mt-1 font-bold">
+                                      Feedback: {report.admin_feedback}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="px-5 py-3 text-right">
+                                  <div className="flex justify-end gap-1.5">
+                                    <a
+                                      href={report.file_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={`border ${t.border} ${t.textMuted} ${t.bgCardHover} w-7 h-7 flex items-center justify-center rounded transition-colors text-xs`}
+                                      title="View"
+                                    >
+                                      <i className="fa-solid fa-eye"></i>
+                                    </a>
+                                    {userProfile.role === "admin" &&
+                                      report.status === "pending_approval" && (
+                                        <>
+                                          <button
+                                            onClick={() =>
+                                              handleApproveReport(
+                                                report.id,
+                                                profData?.full_name,
+                                                teamData?.name,
+                                                report.lead_id,
+                                              )
+                                            }
+                                            className={`border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 w-7 h-7 flex items-center justify-center rounded transition-colors text-xs`}
+                                            title="Approve"
+                                          >
+                                            <i className="fa-solid fa-check"></i>
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleRejectReport(
+                                                report.id,
+                                                profData?.full_name,
+                                                teamData?.name,
+                                                report.lead_id,
+                                              )
+                                            }
+                                            className={`border border-red-500/30 text-red-500 hover:bg-red-500/10 w-7 h-7 flex items-center justify-center rounded transition-colors text-xs`}
+                                            title="Reject"
+                                          >
+                                            <i className="fa-solid fa-xmark"></i>
+                                          </button>
+                                        </>
                                       )}
-                                    {new Date(task.deadline).toLocaleString(
-                                      "en-IN",
-                                      {
-                                        timeZone: "Asia/Kolkata",
-                                        dateStyle: "short",
-                                        timeStyle: "short",
-                                      },
-                                    )}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400 italic font-medium text-xs">
-                                    No Deadline
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-5">
-                                <span
-                                  className={`px-3 py-1.5 border rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm ${task.status === "in_progress" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : task.status === "pending_completion_approval" ? "bg-purple-50 border-purple-200 text-purple-700" : task.status === "rejected" ? "bg-rose-50 border-rose-200 text-rose-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}
-                                >
-                                  {task.status.replace(/_/g, " ")}
-                                </span>
-                                {task.status === "rejected" && (
-                                  <p className="text-[10px] text-rose-600 mt-2 font-bold max-w-[200px] leading-tight">
-                                    Reason: {task.adminFeedback}
-                                  </p>
-                                )}
-                              </td>
-                              <td className="px-6 py-5 text-right">
-                                {userProfile.role === "admin" ? (
-                                  <div className="flex justify-end gap-2">
-                                    {task.status ===
-                                      "pending_completion_approval" && (
-                                      <>
-                                        <button
-                                          onClick={() =>
-                                            handleApproveCompletion(task.id)
-                                          }
-                                          className="bg-white border border-slate-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 w-9 h-9 rounded-xl shadow-sm transition-colors font-bold text-sm"
-                                          title="Approve"
-                                        >
-                                          <i className="fa-solid fa-check"></i>
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleRejectCompletion(task.id)
-                                          }
-                                          className="bg-white border border-slate-200 text-rose-600 hover:bg-rose-50 hover:border-rose-200 w-9 h-9 rounded-xl shadow-sm transition-colors font-bold text-sm"
-                                          title="Reject"
-                                        >
-                                          <i className="fa-solid fa-xmark"></i>
-                                        </button>
-                                      </>
-                                    )}
-                                    <button
-                                      onClick={() => handleEditTask(task)}
-                                      className="bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 w-9 h-9 rounded-xl shadow-sm transition-colors font-bold text-sm"
-                                      title="Edit Task"
-                                    >
-                                      <i className="fa-solid fa-pen"></i>
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteTask(task.id)}
-                                      className="bg-white border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 w-9 h-9 rounded-xl shadow-sm transition-colors font-bold text-sm"
-                                      title="Delete Task"
-                                    >
-                                      <i className="fa-solid fa-trash"></i>
-                                    </button>
                                   </div>
-                                ) : userProfile.role === "team_lead" ? (
-                                  <div className="flex justify-end gap-2">
-                                    <button
-                                      onClick={() => handleEditTask(task)}
-                                      className="bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 w-9 h-9 rounded-xl shadow-sm transition-colors font-bold text-sm"
-                                      title="Edit Task"
-                                    >
-                                      <i className="fa-solid fa-pen"></i>
-                                    </button>
-                                  </div>
-                                ) : userProfile.role === "ai_engineer" &&
-                                  task.status === "in_progress" ? (
-                                  <button
-                                    onClick={() =>
-                                      handleEngineerUpdateProgress(task)
-                                    }
-                                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs shadow-sm transition-all"
-                                  >
-                                    Update Progress
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-                                    Monitored
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     )}
                   </div>
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
-              {/* SECTION: ACTIVITY LOG */}
-              {activeTab === "activity-log" && userProfile.role === "admin" && (
-                <div className="flex flex-col animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 flex flex-col w-full">
-                    <div className="overflow-x-auto w-full custom-scrollbar">
-                      <div className="min-w-[800px]">
-                        <div className="p-5 border-b border-slate-200 bg-slate-50 grid grid-cols-12 text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
-                          <div className="col-span-3">Timestamp</div>
-                          <div className="col-span-3">Entity</div>
-                          <div className="col-span-6">Action Payload</div>
-                        </div>
-                        <div className="p-3 space-y-1 font-mono text-xs">
-                          {logs.map((log) => (
-                            <div
-                              key={log.id}
-                              className="grid grid-cols-12 px-4 py-3 rounded-xl hover:bg-slate-50 border-l-4 border-transparent hover:border-slate-300 transition-colors cursor-default"
-                            >
-                              <div className="col-span-3 text-slate-500 font-semibold tracking-tight">
-                                [
-                                {new Date(log.created_at).toLocaleString(
-                                  "en-IN",
-                                  {
-                                    timeZone: "Asia/Kolkata",
-                                    year: "numeric",
-                                    month: "short",
-                                    day: "numeric",
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    second: "2-digit",
-                                  },
-                                )}
-                                ]
-                              </div>
-                              <div className="col-span-3 text-slate-900 font-bold">
-                                {log.actor_name}{" "}
-                                <span className="text-[9px] uppercase tracking-widest text-slate-500 ml-1 bg-white border border-slate-200 shadow-sm px-1.5 py-0.5 rounded">
-                                  {log.actor_role.replace("_", " ")}
-                                </span>
-                              </div>
-                              <div className="col-span-6 text-slate-700 font-medium">
-                                {log.action_description}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+          {/* TAB: ACTIVITY LOG */}
+          {activeTab === "activity-log" && userProfile.role === "admin" && (
+            <div className="w-full h-full overflow-y-auto custom-scrollbar p-4 sm:p-6">
+              <h1
+                className={`text-2xl font-bold ${t.textMain} tracking-tight mb-6`}
+              >
+                System Audit Trail
+              </h1>
+              <div
+                className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col w-full overflow-hidden`}
+              >
+                <div
+                  className={`p-4 border-b ${t.border} ${t.bgMuted} grid grid-cols-12 text-[10px] font-extrabold ${t.textMuted} uppercase tracking-widest min-w-[700px]`}
+                >
+                  <div className="col-span-3">Timestamp</div>
+                  <div className="col-span-3">Operator</div>
+                  <div className="col-span-6">Command Executed</div>
+                </div>
+                <div
+                  className={`p-2 space-y-1 font-mono text-xs overflow-x-auto min-w-[700px] ${t.bgCard}`}
+                >
+                  {logs.map((log) => (
+                    <div
+                      key={log.id}
+                      className={`grid grid-cols-12 px-3 py-2 rounded ${t.bgCardHover} border-l-2 border-transparent ${t.borderHover} transition-colors`}
+                    >
+                      <div className={`col-span-3 ${t.textMuted} font-bold`}>
+                        [
+                        {new Date(log.created_at).toLocaleString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                          dateStyle: "short",
+                          timeStyle: "medium",
+                        })}
+                        ]
+                      </div>
+                      <div
+                        className={`col-span-3 ${t.textMain} font-bold truncate pr-2`}
+                      >
+                        {log.actor_name}{" "}
+                        <span
+                          className={`text-[8px] ${t.bgMuted} ${t.textMuted} border ${t.border} px-1 py-0.5 rounded tracking-widest uppercase`}
+                        >
+                          {log.actor_role.substring(0, 3)}
+                        </span>
+                      </div>
+                      <div
+                        className={`col-span-6 ${theme === "dark" ? "text-gray-300" : "text-slate-600"} font-medium`}
+                      >
+                        {log.action_description}
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
-              {/* GENERIC EMPTY SECTIONS */}
-              {["ai-agents", "clients"].includes(activeTab) && (
-                <div className="animate-in fade-in duration-500 w-full max-w-[1600px] mx-auto">
-                  <h1 className="text-[32px] font-black text-slate-900 mb-8 capitalize tracking-tight">
-                    {activeTab.replace("-", " ")}
-                  </h1>
-                  <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-8 text-center min-h-[400px] flex flex-col justify-center items-center">
-                    <i className="fa-solid fa-cubes-stacked text-7xl text-slate-200 mb-6 drop-shadow-sm"></i>
-                    <h2 className="text-2xl font-black text-slate-900">
-                      Registry Module Active
-                    </h2>
-                    <p className="text-slate-500 mt-2 font-medium">
-                      Secure database connection established. Telemetry standing
-                      by.
-                    </p>
-                  </div>
-                </div>
-              )}
+          {/* GENERIC MODULES */}
+          {["ai-agents", "clients"].includes(activeTab) && (
+            <div className="w-full h-full p-6 flex flex-col items-center justify-center text-center">
+              <i
+                className={`fa-solid fa-server text-6xl ${t.textMuted} mb-4 opacity-50`}
+              ></i>
+              <h2
+                className={`text-xl font-bold ${t.textMain} capitalize tracking-tight`}
+              >
+                {activeTab.replace("-", " ")} Module Online
+              </h2>
+              <p className={`text-sm font-medium ${t.textMuted} mt-2`}>
+                Awaiting payload definitions.
+              </p>
             </div>
           )}
         </main>
       </div>
-    </>
+    </div>
   );
 }
