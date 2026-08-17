@@ -190,6 +190,7 @@ export default function ZenTechDashboard() {
     navActiveBg: theme === "dark" ? "bg-[#D4AF37]/10" : "bg-purple-50/50",
     navActiveBorder:
       theme === "dark" ? "border-[#D4AF37]" : "border-purple-600",
+    linkColor: theme === "dark" ? "text-red-500" : "text-blue-600", // Dynamic Hyperlink color
   };
 
   useEffect(() => {
@@ -720,7 +721,7 @@ export default function ZenTechDashboard() {
 
     baseChannels.push({
       id: "All Teams",
-      label: "Global Corporate Feed",
+      label: "All Teams",
       avatar_url: getAvatar("All Teams"),
       memberIds: allUserIds,
       lead: "System Administration",
@@ -731,7 +732,7 @@ export default function ZenTechDashboard() {
     if (profile.role === "admin" || profile.role === "team_lead") {
       baseChannels.push({
         id: "Admin",
-        label: profile.role === "admin" ? "Command Center" : "Admin Network",
+        label: profile.role === "admin" ? "Command Center" : "Admins",
         avatar_url: getAvatar("Admin"),
         memberIds: allUserIds.filter(
           (id) =>
@@ -752,7 +753,7 @@ export default function ZenTechDashboard() {
         .find((p) => p.role === "team_lead");
       return {
         id: teamName,
-        label: `${teamName} Comms`,
+        label: `${teamName} `,
         avatar_url: getAvatar(teamName),
         memberIds: memberIds,
         lead: leadProfile ? leadProfile.full_name : "Unassigned",
@@ -1036,7 +1037,7 @@ export default function ZenTechDashboard() {
             key={i}
             href={part}
             onClick={(e) => handleLinkWarning(e, part)}
-            className={`${t.accentText} font-bold hover:underline break-all`}
+            className={`${t.linkColor} font-bold hover:underline break-all`}
           >
             {part}
           </a>
@@ -1254,10 +1255,10 @@ export default function ZenTechDashboard() {
            </div>
            <div class="pt-12 pb-4 text-center border-b border-slate-100 bg-white">
               <h2 class="text-lg font-bold text-slate-900">${activeChObj.label}</h2>
-              <p class="text-xs font-medium text-slate-500 mt-1">${activeChObj.isDirect ? "Direct Message" : `Group Network · ${activeChObj.memberIds.length} Members`}</p>
+              <p class="text-xs font-medium text-slate-500 mt-1">${activeChObj.isDirect ? "Direct Message" : `Team · ${activeChObj.memberIds.length} Members`}</p>
            </div>
            <div class="text-left px-5 py-5 bg-slate-50/50">
-              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 px-1">Directory</h3>
+              <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 px-1">Members</h3>
               <div class="max-h-60 overflow-y-auto custom-scrollbar pr-2">${membersHtml}</div>
            </div>
         </div>
@@ -1962,6 +1963,10 @@ export default function ZenTechDashboard() {
   };
 
   const handleAdminDispatchDirective = async () => {
+    const teamOptionsHtml = allTeamsData
+      .map((t) => `<option value="${t.name}">${t.name}</option>`)
+      .join("");
+
     const { value: formValues } = await Swal.fire({
       title: "Global Directive",
       html: `
@@ -1971,9 +1976,7 @@ export default function ZenTechDashboard() {
           
           <label style="font-size: 12px; font-weight: 600;">Target Division</label>
           <select id="dir-team" class="swal2-input" style="width: 100%; margin: 5px 0 15px 0; font-size: 14px; border-radius: 6px; color:#000;">
-            <option value="Core AI & Backend">Core AI & Backend</option>
-            <option value="Tools & Integrations">Tools & Integrations</option>
-            <option value="QA & Operations">QA & Operations</option>
+            ${teamOptionsHtml}
           </select>
 
           <label style="font-size: 12px; font-weight: 600;">Deadline (Optional)</label>
@@ -3289,7 +3292,7 @@ export default function ZenTechDashboard() {
                             </span>
                             {preview?.time && (
                               <span
-                                className={`text-[9px] uppercase font-bold ${preview.count > 0 && !isActive ? t.accentText : t.textMuted}`}
+                                className={`text-[9px] uppercase font-bold ${preview.count > 0 && !isActive ? t.linkColor : t.textMuted}`}
                               >
                                 {preview.time}
                               </span>
@@ -3916,7 +3919,7 @@ export default function ZenTechDashboard() {
                                 href={task.file_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`text-[10px] ${t.accentText} hover:opacity-80 mt-1 flex items-center font-bold w-fit transition-colors uppercase tracking-wide`}
+                                className={`text-[10px] ${t.linkColor} hover:opacity-80 mt-1 flex items-center font-bold w-fit transition-colors uppercase tracking-wide`}
                               >
                                 <i className="fa-solid fa-file-pdf text-red-500 mr-1"></i>{" "}
                                 View Document
@@ -4684,7 +4687,7 @@ export default function ZenTechDashboard() {
                                     href={report.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className={`font-bold ${t.accentText} hover:underline flex items-center text-xs`}
+                                    className={`font-bold ${t.linkColor} hover:underline flex items-center text-xs`}
                                   >
                                     <i className="fa-solid fa-file-pdf text-red-500 mr-2"></i>{" "}
                                     {report.file_name}
