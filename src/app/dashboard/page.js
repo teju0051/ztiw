@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabaseClient";
 import Swal from "sweetalert2";
 
-// Preset distinct colors for divisions
+// Preset distinct colors for divisions (Dynamic Hash fallback for new ones)
 const TEAM_PALETTE = [
   "#9333ea", // Purple
   "#0891b2", // Cyan
@@ -18,16 +18,6 @@ const TEAM_PALETTE = [
   "#f97316", // Orange
   "#3b82f6", // Blue
 ];
-
-const getDynamicTeamColor = (index, teamName) => {
-  if (index < TEAM_PALETTE.length) return TEAM_PALETTE[index];
-  let hash = 0;
-  for (let i = 0; i < teamName.length; i++) {
-    hash = teamName.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const c = (hash & 0x00ffffff).toString(16).toUpperCase();
-  return "#" + "00000".substring(0, 6 - c.length) + c;
-};
 
 // ==========================================
 // ZERO-COST WEBRTC VIDEO ENGINE
@@ -152,6 +142,8 @@ export default function ZenTechDashboard() {
   const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [pastedImage, setPastedImage] = useState(null);
   const [pinnedMessage, setPinnedMessage] = useState(null);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [customStickers, setCustomStickers] = useState([]);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
 
@@ -161,6 +153,7 @@ export default function ZenTechDashboard() {
   const chatInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const groupAvatarInputRef = useRef(null);
+  const stickerInputRef = useRef(null);
 
   const notifiedIdsRef = useRef(new Set());
   const notifiedOverdueTasksRef = useRef(new Set());
@@ -190,7 +183,43 @@ export default function ZenTechDashboard() {
     navActiveBg: theme === "dark" ? "bg-[#D4AF37]/10" : "bg-purple-50/50",
     navActiveBorder:
       theme === "dark" ? "border-[#D4AF37]" : "border-purple-600",
-    linkColor: theme === "dark" ? "text-red-500" : "text-blue-600", // Dynamic Hyperlink color
+    linkColor: theme === "dark" ? "text-red-500" : "text-blue-600",
+  };
+
+  // Dynamic Color Engine
+  const getTeamColor = (teamName) => {
+    if (!teamName || teamName === "Unassigned") return "#64748b"; // slate-500
+    if (teamName === "System Administration")
+      return theme === "dark" ? "#D4AF37" : "#1e293b";
+
+    const idx = allTeamsData.findIndex((t) => t.name === teamName);
+    if (idx !== -1 && idx < TEAM_PALETTE.length) {
+      return TEAM_PALETTE[idx];
+    }
+
+    let hash = 0;
+    for (let i = 0; i < teamName.length; i++) {
+      hash = teamName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+    return "#" + "00000".substring(0, 6 - c.length) + c;
+  };
+
+  // Reusable dynamic badge component
+  const TeamBadge = ({ teamName, className = "" }) => {
+    const color = getTeamColor(teamName);
+    return (
+      <span
+        className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border shadow-sm whitespace-nowrap ${className}`}
+        style={{
+          backgroundColor: `${color}15`,
+          color: color,
+          borderColor: `${color}40`,
+        }}
+      >
+        {teamName}
+      </span>
+    );
   };
 
   useEffect(() => {
@@ -458,7 +487,7 @@ export default function ZenTechDashboard() {
       preConfirm: () => {
         const msg = document.getElementById("maint-msg").value;
         const timeRaw = document.getElementById("maint-time").value;
-        const time = timeRaw ? `${timeRaw}:00+05:30` : null;
+        const time = timeRaw ? `${timeRaw}:00+05:30` : null; // Force IST
         if (!msg) Swal.showValidationMessage("A display message is required.");
         return { msg, time };
       },
@@ -643,51 +672,18 @@ export default function ZenTechDashboard() {
   };
 
   const filteredStaff = allStaff.filter((staff) => {
+    const searchStr = searchQuery.toLowerCase();
     const matchesSearch =
-      staff.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      staff.staff_id.toLowerCase().includes(searchQuery.toLowerCase());
+      staff.full_name.toLowerCase().includes(searchStr) ||
+      staff.staff_id.toLowerCase().includes(searchStr) ||
+      (staff.role === "admin" && "system administrator".includes(searchStr)) ||
+      staff.role.replace(/_/g, " ").toLowerCase().includes(searchStr) ||
+      staff.division.toLowerCase().includes(searchStr);
+
     const matchesRole = roleFilter === "All" || staff.role === roleFilter;
     const matchesTeam = teamFilter === "All" || staff.division === teamFilter;
     return matchesSearch && matchesRole && matchesTeam;
   });
-
-  const getDivisionStyle = (div) => {
-    if (theme === "dark")
-      return "bg-[#D4AF37]/10 text-[#D4AF37] border-[#D4AF37]/30";
-    if (div === "Core AI & Backend")
-      return "bg-purple-50 text-purple-700 border-purple-200";
-    if (div === "Tools & Integrations")
-      return "bg-blue-50 text-blue-700 border-blue-200";
-    if (div === "QA & Operations")
-      return "bg-rose-50 text-rose-700 border-rose-200";
-    if (div === "System Administration")
-      return "bg-slate-800 text-white border-slate-800";
-    return "bg-slate-100 text-slate-600 border-slate-200";
-  };
-
-  const getChatBubbleStyle = (team, isMe, showColors) => {
-    if (isMe) return `${t.primaryBg} ${t.primaryText} rounded-lg rounded-tr-sm`;
-    if (!showColors || theme === "dark")
-      return `${t.bgMuted} ${t.textMain} ${t.border} border rounded-lg rounded-tl-sm`;
-
-    if (team === "Core AI & Backend")
-      return "bg-purple-50 border-purple-200 text-slate-800 rounded-lg rounded-tl-sm";
-    if (team === "Tools & Integrations")
-      return "bg-blue-50 border-blue-200 text-slate-800 rounded-lg rounded-tl-sm";
-    if (team === "QA & Operations")
-      return "bg-rose-50 border-rose-200 text-slate-800 rounded-lg rounded-tl-sm";
-    if (team === "System Administration")
-      return "bg-slate-100 border-slate-300 text-slate-800 rounded-lg rounded-tl-sm";
-    return "bg-white border-slate-200 text-slate-800 rounded-lg rounded-tl-sm";
-  };
-
-  const getChatNameColor = (team) => {
-    if (team === "Core AI & Backend") return "text-purple-700";
-    if (team === "Tools & Integrations") return "text-blue-700";
-    if (team === "QA & Operations") return "text-rose-700";
-    if (team === "System Administration") return "text-slate-800";
-    return "text-slate-700";
-  };
 
   const fetchUserChannels = async (profile, dirMap) => {
     const { data: channelMeta } = await supabase
@@ -1234,7 +1230,7 @@ export default function ZenTechDashboard() {
         if (!user) return "";
         let roleBadge =
           user.role === "admin"
-            ? "👑 Admin"
+            ? "👑 System Administrator"
             : user.role === "team_lead"
               ? `✅ Lead - ${user.team_name || "Unassigned"}`
               : `🛠️ ${user.team_name || "AI Engineer"}`;
@@ -1391,7 +1387,7 @@ export default function ZenTechDashboard() {
       title: `Ban ${staff.full_name}`,
       html: `
         <div style="text-align: left; font-size: 14px;">
-          <p style="margin-bottom: 15px;"><strong>Role:</strong> ${staff.role.replace("_", " ")}</p>
+          <p style="margin-bottom: 15px;"><strong>Role:</strong> ${staff.role === "admin" ? "System Administrator" : staff.role.replace("_", " ")}</p>
           <label style="display: block; margin-bottom: 8px;"><input type="radio" name="banType" id="tempBan" value="temporary" ${isTempDisabled ? "disabled" : "checked"}> <span style="${isTempDisabled ? "text-decoration: line-through; opacity: 0.5;" : ""}">Temporary Ban (24 Hours)</span></label>
           <label style="display: block; margin-bottom: 15px;"><input type="radio" name="banType" id="permBan" value="permanent" ${isTempDisabled ? "checked" : ""}> <strong style="color: #dc2626;">Permanent Ban</strong> ${isTempDisabled ? '<span style="font-size: 11px; display:block; color:#ef4444;">(Required: Revoke chance exhausted)</span>' : ""}</label>
           <textarea id="banReason" class="swal2-textarea" placeholder="Enter reason for the ban..." style="width: 100%; height: 80px; margin: 0; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;"></textarea>
@@ -1996,7 +1992,7 @@ export default function ZenTechDashboard() {
         const title = document.getElementById("dir-title").value;
         const team = document.getElementById("dir-team").value;
         const deadlineRaw = document.getElementById("dir-deadline").value;
-        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null;
+        const deadline = deadlineRaw ? `${deadlineRaw}:00+05:30` : null; // IST lock
         const file = document.getElementById("dir-file").files[0];
         if (!title) Swal.showValidationMessage("Title is required");
         return { title, team, deadline, file };
@@ -2498,7 +2494,7 @@ export default function ZenTechDashboard() {
   // Dynamic Dashboard Stats
   const dynamicDivisionStats = allTeamsData.map((team, idx) => {
     const count = tasks.filter((t) => t.team === team.name).length;
-    const color = getDynamicTeamColor(idx, team.name);
+    const color = getTeamColor(team.name);
     return { name: team.name, count, color };
   });
 
@@ -2698,7 +2694,9 @@ export default function ZenTechDashboard() {
                     {userProfile.full_name}
                   </p>
                   <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mt-0.5">
-                    {userProfile.role.replace("_", " ")}
+                    {userProfile.role === "admin"
+                      ? "System Administrator"
+                      : userProfile.role.replace("_", " ")}
                   </p>
                 </div>
 
@@ -2747,7 +2745,6 @@ export default function ZenTechDashboard() {
         <div
           className={`${t.bgCard} ${t.border} border-b shadow-sm shrink-0 z-30 relative transition-colors duration-300`}
         >
-          {/* Added 'justify-start md:justify-center' to align tabs to the center safely */}
           <div className="w-full mx-auto px-2 sm:px-4 flex items-center justify-start md:justify-center overflow-x-auto custom-scrollbar pt-1 gap-1">
             <NavButton
               id="dashboard"
@@ -2827,24 +2824,18 @@ export default function ZenTechDashboard() {
                       (t) =>
                         !["completed", "rejected", "failed"].includes(
                           t.status?.toLowerCase(),
-                        ) && t.assigned_to === userProfile.id, // <-- Ensures they only see THEIR assigned tasks
+                        ) && t.assigned_to === userProfile.id,
                     )
                     .map((activeTask, idx) => (
                       <div
                         key={`alert-${activeTask.id || idx}`}
                         className="relative w-full"
                       >
-                        {/* Pulsing/Fading Glow Behind */}
                         <div className="absolute inset-0 bg-red-500 blur-lg opacity-40 animate-pulse rounded-sm"></div>
-
-                        {/* Flat Horizontal Banner (Matches Reference Image Layout) */}
                         <div className="relative bg-[#ffebe6] border border-red-200 px-4 py-3 flex items-start sm:items-center gap-3 shadow-sm rounded-sm">
-                          {/* Blue & White Tick Icon */}
                           <div className="bg-[#0b4d5e] text-white w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 shadow-inner mt-0.5 sm:mt-0">
                             <i className="fa-solid fa-check text-sm"></i>
                           </div>
-
-                          {/* Text Content: Explicitly showing Title and Description */}
                           <div className="flex flex-col sm:flex-row sm:items-center flex-wrap text-sm sm:text-[15px] text-red-900 w-full gap-1 sm:gap-2 leading-snug">
                             <strong className="font-extrabold tracking-wide shrink-0">
                               Task:{" "}
@@ -2856,7 +2847,6 @@ export default function ZenTechDashboard() {
                     ))}
                 </div>
               )}
-              {/* --- END PERSISTENT TASK ALERTS --- */}
 
               <div
                 className={`flex flex-col sm:flex-row sm:items-center justify-between pb-2 ${t.border} border-b`}
@@ -3292,7 +3282,7 @@ export default function ZenTechDashboard() {
                             </span>
                             {preview?.time && (
                               <span
-                                className={`text-[9px] uppercase font-bold ${preview.count > 0 && !isActive ? t.linkColor : t.textMuted}`}
+                                className={`text-[9px] uppercase font-bold ${preview.count > 0 && !isActive ? t.accentText : t.textMuted}`}
                               >
                                 {preview.time}
                               </span>
@@ -3519,7 +3509,17 @@ export default function ZenTechDashboard() {
                               className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                             >
                               <div
-                                className={`p-3 shadow-sm text-sm border ${getChatBubbleStyle(senderTeam, isMe, showRoleBadgeAndColors)}`}
+                                className={`p-3 shadow-sm text-sm border ${isMe ? `rounded-lg rounded-tr-sm ${theme === "dark" ? "bg-[#D4AF37] text-black border-[#D4AF37]" : "bg-purple-600 text-white border-purple-700"}` : `rounded-lg rounded-tl-sm ${theme === "dark" ? "bg-[#222] border-[#333] text-white" : "bg-white border-slate-200 text-slate-800"}`}`}
+                                style={
+                                  !isMe &&
+                                  showRoleBadgeAndColors &&
+                                  theme !== "dark"
+                                    ? {
+                                        backgroundColor: `${getTeamColor(senderTeam)}0D`,
+                                        borderColor: `${getTeamColor(senderTeam)}30`,
+                                      }
+                                    : {}
+                                }
                               >
                                 {repliedMsg && (
                                   <div
@@ -3545,18 +3545,28 @@ export default function ZenTechDashboard() {
                                 >
                                   <div className="flex items-center gap-2">
                                     <span
-                                      className={`font-bold text-xs ${isMe ? (theme === "dark" ? "text-black" : "text-white") : getChatNameColor(senderTeam)}`}
+                                      className={`font-bold text-xs`}
+                                      style={
+                                        isMe
+                                          ? {}
+                                          : {
+                                              color:
+                                                showRoleBadgeAndColors &&
+                                                theme !== "dark"
+                                                  ? getTeamColor(senderTeam)
+                                                  : undefined,
+                                            }
+                                      }
                                     >
                                       {isMe ? "You" : msg.profiles?.full_name}
                                     </span>
                                     {!isMe &&
                                       senderTeam !== "Unassigned" &&
                                       showRoleBadgeAndColors && (
-                                        <span
-                                          className={`text-[7px] font-black uppercase tracking-widest px-1 py-0.5 rounded shadow-sm border ${getDivisionStyle(senderTeam)}`}
-                                        >
-                                          {senderTeam}
-                                        </span>
+                                        <TeamBadge
+                                          teamName={senderTeam}
+                                          className="text-[7px] py-0 px-1"
+                                        />
                                       )}
                                   </div>
                                   <span
@@ -3842,7 +3852,9 @@ export default function ZenTechDashboard() {
                                   className={`text-[9px] ${t.textMuted} font-bold uppercase tracking-widest`}
                                 >
                                   {staff.staff_id} •{" "}
-                                  {staff.role.replace("_", " ")}
+                                  {staff.role === "admin"
+                                    ? "System Administrator"
+                                    : staff.role.replace("_", " ")}
                                 </p>
                               </div>
                             </div>
@@ -3927,11 +3939,7 @@ export default function ZenTechDashboard() {
                             )}
                           </td>
                           <td className="px-5 py-3">
-                            <span
-                              className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${getDivisionStyle(task.team)}`}
-                            >
-                              {task.team}
-                            </span>
+                            <TeamBadge teamName={task.team} />
                           </td>
                           <td
                             className={`px-5 py-3 ${t.textMain} font-bold text-xs`}
@@ -4142,7 +4150,9 @@ export default function ZenTechDashboard() {
                               <span
                                 className={`text-[9px] ${t.textMuted} font-bold uppercase tracking-widest`}
                               >
-                                {staff.role.replace("_", " ")}
+                                {staff.role === "admin"
+                                  ? "System Administrator"
+                                  : staff.role.replace("_", " ")}
                               </span>
                             </div>
                           </td>
@@ -4157,11 +4167,7 @@ export default function ZenTechDashboard() {
                             {staff.current_task}
                           </td>
                           <td className="px-5 py-3">
-                            <span
-                              className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-widest border ${getDivisionStyle(staff.division)}`}
-                            >
-                              {staff.division}
-                            </span>
+                            <TeamBadge teamName={staff.division} />
                           </td>
                           <td className="px-5 py-3 text-right">
                             <div className="flex justify-end gap-2">
@@ -4220,18 +4226,18 @@ export default function ZenTechDashboard() {
                 )}
               </div>
 
-              <div className="flex flex-col lg:flex-row gap-6">
+              <div className="flex flex-col lg:flex-row gap-6 items-start w-full">
                 {/* Admin Only: Unassigned */}
                 {userProfile.role === "admin" &&
                   unassignedEngineers.length > 0 && (
                     <div
-                      className={`lg:w-1/3 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col self-start`}
+                      className={`w-full lg:w-[30%] ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col`}
                     >
                       <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
                         <h3
                           className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
                         >
-                          Not in any team / Team not alloted
+                          Unassigned Personnel
                         </h3>
                       </div>
                       <div className="p-3">
@@ -4246,7 +4252,11 @@ export default function ZenTechDashboard() {
                               >
                                 {eng.full_name}{" "}
                                 <span className="font-normal text-[9px] text-gray-500 uppercase ml-1 block mt-0.5">
-                                  ({eng.role.replace("_", " ")})
+                                  (
+                                  {eng.role === "admin"
+                                    ? "System Admin"
+                                    : eng.role.replace("_", " ")}
+                                  )
                                 </span>
                               </span>
                               <button
@@ -4265,39 +4275,28 @@ export default function ZenTechDashboard() {
                   )}
 
                 {/* Division Lists */}
-                <div
-                  className={`flex-1 ${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col`}
-                >
-                  <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
-                    <h3
-                      className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
-                    >
-                      {userProfile.role === "admin"
-                        ? "Division Architecture"
-                        : "My Team"}
-                    </h3>
-                  </div>
-                  <div className="p-5">
-                    {userProfile.role === "admin" ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`flex-1 w-full flex flex-col gap-4`}>
+                  {userProfile.role === "admin" ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {allTeamsData.map((team, idx) => {
                           const leadProf = Array.isArray(team.profiles)
                             ? team.profiles[0]
                             : team.profiles;
-                          const teamColor = getDynamicTeamColor(idx, team.name);
+                          const teamColor = getTeamColor(team.name);
                           return (
                             <div
                               key={team.id}
-                              className={`border ${t.border} rounded shadow-sm ${t.bgMuted} p-4 flex flex-col justify-between`}
+                              className={`border ${t.border} rounded shadow-sm ${t.bgCard} p-4 flex flex-col justify-between`}
                             >
                               <div>
-                                <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
+                                <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200/50">
                                   <h4
-                                    className={`text-xs font-black uppercase tracking-widest flex items-center gap-2`}
+                                    className={`text-sm font-black uppercase tracking-widest flex items-center gap-2`}
                                     style={{ color: teamColor }}
                                   >
                                     <span
-                                      className="w-2 h-2 rounded-full"
+                                      className="w-2.5 h-2.5 rounded-full"
                                       style={{ backgroundColor: teamColor }}
                                     ></span>
                                     {team.name}
@@ -4315,13 +4314,13 @@ export default function ZenTechDashboard() {
 
                                 {/* Lead Section */}
                                 <div
-                                  className={`${t.bgCard} border ${t.border} p-3 rounded shadow-sm mb-3`}
+                                  className={`${t.bgMuted} border ${t.border} p-3 rounded shadow-sm mb-3`}
                                 >
                                   <div className="flex justify-between items-center mb-1">
                                     <span
-                                      className={`text-[10px] ${t.accentText} font-bold uppercase tracking-widest block`}
+                                      className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-widest block`}
                                     >
-                                      Supervisor
+                                      Team Leader
                                     </span>
                                     <button
                                       onClick={() =>
@@ -4381,7 +4380,7 @@ export default function ZenTechDashboard() {
                                                 team.id,
                                               )
                                             }
-                                            className={`text-[9px] ${t.bgMuted} border ${t.border} ${t.textMuted} hover:text-red-500 px-1.5 py-0.5 rounded font-bold uppercase`}
+                                            className={`text-[9px] ${t.bgCard} border ${t.border} ${t.textMuted} hover:text-red-500 px-1.5 py-0.5 rounded font-bold uppercase`}
                                             title="Remove"
                                           >
                                             <i className="fa-solid fa-xmark"></i>
@@ -4401,7 +4400,7 @@ export default function ZenTechDashboard() {
                                     return (
                                       <div
                                         key={tm.user_id}
-                                        className={`${t.bgCard} border ${t.border} p-2 rounded flex justify-between items-center`}
+                                        className={`${t.bgMuted} border ${t.border} p-2 rounded flex justify-between items-center`}
                                       >
                                         <span
                                           className={`font-semibold ${t.textMain} text-[11px]`}
@@ -4429,7 +4428,7 @@ export default function ZenTechDashboard() {
                                                 team.id,
                                               )
                                             }
-                                            className={`text-[9px] ${t.textMuted} hover:text-red-500 border border-transparent ${t.borderHover} rounded px-1.5 ${t.bgMuted}`}
+                                            className={`text-[9px] ${t.textMuted} hover:text-red-500 border border-transparent ${t.borderHover} rounded px-1.5 ${t.bgCard}`}
                                             title="Remove"
                                           >
                                             <i className="fa-solid fa-xmark"></i>
@@ -4444,39 +4443,52 @@ export default function ZenTechDashboard() {
                           );
                         })}
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {teamMembers.length === 0 ? (
-                          <p
-                            className={`text-xs font-semibold ${t.textMuted} italic`}
-                          >
-                            No assigned personnel.
-                          </p>
-                        ) : (
-                          teamMembers.map((tm) => (
-                            <div
-                              key={tm.id}
-                              className={`border ${t.border} rounded ${t.bgCard} p-4 flex justify-between items-center shadow-sm`}
-                            >
-                              <span
-                                className={`font-bold ${t.textMain} text-sm`}
-                              >
-                                {tm.name}
-                              </span>
-                              <button
-                                onClick={() =>
-                                  handleAssignTaskToMember(tm.id, tm.name)
-                                }
-                                className={`text-[10px] ${t.accentBg} border ${theme === "dark" ? "border-[#D4AF37]/50" : "border-purple-200"} ${t.accentText} px-3 py-1.5 rounded font-bold hover:opacity-80 transition-colors uppercase tracking-widest shadow-sm`}
-                              >
-                                Issue Task
-                              </button>
-                            </div>
-                          ))
-                        )}
+                    </>
+                  ) : (
+                    <div
+                      className={`${t.bgCard} rounded-lg shadow-sm border ${t.border} flex flex-col`}
+                    >
+                      <div className={`p-4 border-b ${t.border} ${t.bgMuted}`}>
+                        <h3
+                          className={`font-bold ${t.textMain} text-sm uppercase tracking-wide`}
+                        >
+                          My Team
+                        </h3>
                       </div>
-                    )}
-                  </div>
+                      <div className="p-5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {teamMembers.length === 0 ? (
+                            <p
+                              className={`text-xs font-semibold ${t.textMuted} italic`}
+                            >
+                              No assigned personnel.
+                            </p>
+                          ) : (
+                            teamMembers.map((tm) => (
+                              <div
+                                key={tm.id}
+                                className={`border ${t.border} rounded ${t.bgMuted} p-4 flex justify-between items-center shadow-sm`}
+                              >
+                                <span
+                                  className={`font-bold ${t.textMain} text-sm`}
+                                >
+                                  {tm.name}
+                                </span>
+                                <button
+                                  onClick={() =>
+                                    handleAssignTaskToMember(tm.id, tm.name)
+                                  }
+                                  className={`text-[10px] ${t.accentBg} border ${theme === "dark" ? "border-[#D4AF37]/50" : "border-purple-200"} ${t.accentText} px-3 py-1.5 rounded font-bold hover:opacity-80 transition-colors uppercase tracking-widest shadow-sm`}
+                                >
+                                  Issue Task
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -4495,7 +4507,7 @@ export default function ZenTechDashboard() {
                   const leadProf = Array.isArray(team.profiles)
                     ? team.profiles[0]
                     : team.profiles;
-                  const teamColor = getDynamicTeamColor(idx, team.name);
+                  const teamColor = getTeamColor(team.name);
                   return (
                     <div
                       key={team.id}
@@ -4523,7 +4535,7 @@ export default function ZenTechDashboard() {
                         <span
                           className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-widest block mb-1`}
                         >
-                          Director
+                          Team Lead
                         </span>
                         <div
                           className={`${t.bgMuted} border ${t.border} px-3 py-2 rounded text-xs font-bold ${t.textMain}`}
@@ -4538,7 +4550,7 @@ export default function ZenTechDashboard() {
                         <span
                           className={`text-[10px] ${t.textMuted} font-bold uppercase tracking-widest block mb-2`}
                         >
-                          Deployed Staff
+                          Team Members
                         </span>
                         <ul className="space-y-1">
                           {team.team_members?.length > 0 ? (
@@ -4555,7 +4567,9 @@ export default function ZenTechDashboard() {
                                     {eng?.full_name}
                                   </span>{" "}
                                   <span className="text-[9px] opacity-70">
-                                    {eng?.role.replace("_", " ")}
+                                    {eng?.role === "admin"
+                                      ? "System Admin"
+                                      : eng?.role.replace("_", " ")}
                                   </span>
                                 </li>
                               );
@@ -4822,7 +4836,9 @@ export default function ZenTechDashboard() {
                         <span
                           className={`text-[8px] ${t.bgMuted} ${t.textMuted} border ${t.border} px-1 py-0.5 rounded tracking-widest uppercase`}
                         >
-                          {log.actor_role.substring(0, 3)}
+                          {log.actor_role === "admin"
+                            ? "ADM"
+                            : log.actor_role.substring(0, 3)}
                         </span>
                       </div>
                       <div
