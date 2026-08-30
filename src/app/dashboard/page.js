@@ -150,6 +150,7 @@ export default function ZenTechDashboard() {
   const chatContainerRef = useRef(null);
   const chatEndRef = useRef(null);
   const chatMediaInputRef = useRef(null);
+  const chatDocInputRef = useRef(null); // Added for document uploads
   const chatInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const groupAvatarInputRef = useRef(null);
@@ -1198,6 +1199,73 @@ export default function ZenTechDashboard() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ record: insertedMediaData }),
+          });
+        } catch (err) {}
+      }
+    } catch (err) {
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const handleChatDocUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const allowedExtensions = /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv)$/i;
+    if (!file.name.match(allowedExtensions)) {
+      Swal.fire(
+        "Invalid Format",
+        "Only Document files (PDF, Word, Excel, PPT, etc.) are allowed here.",
+        "error",
+      );
+      if (chatDocInputRef.current) chatDocInputRef.current.value = "";
+      return;
+    }
+
+    setIsSendingChat(true);
+    try {
+      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, "_")}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("chat_media")
+        .upload(fileName, file);
+
+      if (uploadError) {
+        Swal.fire("Upload Failed", uploadError.message, "error");
+        setIsSendingChat(false);
+        return;
+      }
+
+      const publicUrl = supabase.storage
+        .from("chat_media")
+        .getPublicUrl(fileName).data.publicUrl;
+
+      const { data: insertedDocData, error: dbError } = await supabase
+        .from("chats")
+        .insert([
+          {
+            channel: activeChatChannel,
+            sender_id: userProfile.id,
+            message: file.name,
+            media_url: publicUrl,
+            media_type: "document",
+          },
+        ])
+        .select()
+        .single();
+
+      if (chatDocInputRef.current) chatDocInputRef.current.value = "";
+      setIsUserScrolling(false);
+      fetchChatMessages();
+      fetchChatPreviews();
+
+      if (!dbError && insertedDocData) {
+        try {
+          await fetch("/api/webhooks/chat-notification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ record: insertedDocData }),
           });
         } catch (err) {}
       }
@@ -3596,13 +3664,74 @@ export default function ZenTechDashboard() {
                                     style={{ maxHeight: "250px" }}
                                   />
                                 )}
-                                {msg.message && (
-                                  <p
-                                    className={`whitespace-pre-wrap leading-relaxed font-medium text-[13px] ${isMe && theme === "dark" ? "text-black" : ""}`}
+
+                                {/* --- NEW DOCUMENT RENDERER --- */}
+                                {msg.media_type === "document" && (
+                                  <a
+                                    href={msg.media_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`mt-2 mb-2 p-3 rounded-lg border ${
+                                      isMe
+                                        ? theme === "dark"
+                                          ? "border-black/20 bg-black/10"
+                                          : "border-purple-300 bg-purple-50"
+                                        : theme === "dark"
+                                          ? "border-[#333] bg-[#222]"
+                                          : "border-slate-200 bg-slate-50"
+                                    } flex items-center gap-3 transition-colors hover:opacity-80 shadow-sm max-w-sm w-full`}
                                   >
-                                    {renderMessageText(msg.message)}
-                                  </p>
+                                    <div
+                                      className={`w-10 h-10 rounded flex items-center justify-center shrink-0 ${
+                                        isMe
+                                          ? theme === "dark"
+                                            ? "bg-black/30 text-black"
+                                            : "bg-purple-200 text-purple-700"
+                                          : theme === "dark"
+                                            ? "bg-[#333] text-gray-300"
+                                            : "bg-slate-200 text-slate-600"
+                                      }`}
+                                    >
+                                      <i className="fa-solid fa-file-lines text-lg"></i>
+                                    </div>
+                                    <div className="flex flex-col overflow-hidden">
+                                      <span
+                                        className={`text-xs font-bold truncate ${
+                                          isMe
+                                            ? theme === "dark"
+                                              ? "text-black"
+                                              : "text-purple-900"
+                                            : t.textMain
+                                        }`}
+                                      >
+                                        {msg.message || "Encrypted Document"}
+                                      </span>
+                                      <span
+                                        className={`text-[10px] font-bold uppercase tracking-widest ${
+                                          isMe
+                                            ? theme === "dark"
+                                              ? "text-black/60"
+                                              : "text-purple-500"
+                                            : t.textMuted
+                                        } mt-0.5 flex items-center gap-1`}
+                                      >
+                                        <i className="fa-solid fa-download text-[8px]"></i>{" "}
+                                        Click to Access
+                                      </span>
+                                    </div>
+                                  </a>
                                 )}
+
+                                {/* Modified text renderer to ignore document filenames */}
+                                {msg.message &&
+                                  msg.media_type !== "document" && (
+                                    <p
+                                      className={`whitespace-pre-wrap leading-relaxed font-medium text-[13px] ${isMe && theme === "dark" ? "text-black" : ""}`}
+                                    >
+                                      {renderMessageText(msg.message)}
+                                    </p>
+                                  )}
+
                                 {msg.edited_at && (
                                   <span
                                     className={`block text-right text-[8px] font-bold mt-1 uppercase tracking-widest ${isMe ? (theme === "dark" ? "text-black/70" : "text-purple-300") : t.textMuted}`}
@@ -3717,14 +3846,35 @@ export default function ZenTechDashboard() {
                       className="hidden"
                       onChange={handleChatMediaUpload}
                     />
-                    <button
-                      onClick={() => chatMediaInputRef.current.click()}
-                      disabled={isSendingChat}
-                      className={`w-8 h-8 rounded flex items-center justify-center ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} ${t.bgCardHover} transition-colors shrink-0 mb-0.5 shadow-sm`}
-                      title="Upload Media"
-                    >
-                      <i className="fa-solid fa-paperclip"></i>
-                    </button>
+                    <input
+                      type="file"
+                      ref={chatDocInputRef}
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                      className="hidden"
+                      onChange={handleChatDocUpload}
+                    />
+
+                    <div className="flex gap-1 shrink-0 mb-0.5">
+                      {/* Photo / Video Button */}
+                      <button
+                        onClick={() => chatMediaInputRef.current.click()}
+                        disabled={isSendingChat}
+                        className={`w-8 h-8 rounded flex items-center justify-center ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} ${t.bgCardHover} transition-colors shadow-sm`}
+                        title="Upload Photo/Video"
+                      >
+                        <i className="fa-solid fa-image"></i>
+                      </button>
+
+                      {/* Document Button */}
+                      <button
+                        onClick={() => chatDocInputRef.current.click()}
+                        disabled={isSendingChat}
+                        className={`w-8 h-8 rounded flex items-center justify-center ${t.bgCard} border ${t.border} ${t.textMuted} ${theme === "dark" ? "hover:text-[#D4AF37]" : "hover:text-purple-600"} ${t.bgCardHover} transition-colors shadow-sm`}
+                        title="Upload Document (PDF, Excel, Word)"
+                      >
+                        <i className="fa-solid fa-file-lines"></i>
+                      </button>
+                    </div>
                     <textarea
                       ref={chatInputRef}
                       className={`flex-1 bg-transparent border-none focus:ring-0 text-sm font-medium ${t.textMain} px-2 py-2 resize-none custom-scrollbar outline-none`}
@@ -4088,13 +4238,13 @@ export default function ZenTechDashboard() {
                   onChange={(e) => setTeamFilter(e.target.value)}
                 >
                   <option value="All">All Divisions</option>
+                  <option value="System Administration">System Admin</option>
+                  <option value="Unassigned">Unassigned</option>
                   {allTeamsData.map((t) => (
                     <option key={t.id} value={t.name}>
                       {t.name}
                     </option>
                   ))}
-                  <option value="System Administration">System Admin</option>
-                  <option value="Unassigned">Unassigned</option>
                 </select>
               </div>
 
